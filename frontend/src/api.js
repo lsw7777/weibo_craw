@@ -30,10 +30,27 @@ export function resolveMediaUrl(asset) {
   return `${API_BASE}${asset.served_url}`;
 }
 
+export function resolveAvatarUrl(url) {
+  if (!url) {
+    return "";
+  }
+  if (url.startsWith("/")) {
+    return `${API_BASE}${url}`;
+  }
+  return `${API_BASE}/api/media/proxy?url=${encodeURIComponent(url)}`;
+}
+
 export function scrapeAccounts(payload) {
   return request("/api/scrape", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function resolveAccounts(accounts) {
+  return request("/api/accounts/resolve", {
+    method: "POST",
+    body: JSON.stringify({ accounts }),
   });
 }
 
@@ -51,6 +68,11 @@ export function saveCookieString(cookieString) {
 export function searchAccounts(query, limit = 10) {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   return request(`/api/accounts/search?${params.toString()}`);
+}
+
+export function getFollowing(page = 1, pageSize = 20) {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  return request(`/api/accounts/following?${params.toString()}`);
 }
 
 export function batchFollow(action, targets) {

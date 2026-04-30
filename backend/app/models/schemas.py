@@ -34,9 +34,15 @@ class PostData(BaseModel):
     comments: list[CommentData] = Field(default_factory=list)
 
 
+class TopicStat(BaseModel):
+    topic: str
+    count: int
+
+
 class AnalysisSection(BaseModel):
     summary: str
     topics: list[str] = Field(default_factory=list)
+    topic_stats: list[TopicStat] = Field(default_factory=list)
     viewpoints: list[str] = Field(default_factory=list)
     sentiment: Literal["正面", "负面", "中性", "分化"]
     positive_count: int = 0
@@ -86,6 +92,36 @@ class AccountSearchResult(BaseModel):
     screen_name: str
     profile_url: str
     intro: str | None = None
+    avatar_url: str | None = None
+    followers_count: int | None = None
+    friends_count: int | None = None
+    statuses_count: int | None = None
+    following: bool | None = None
+
+
+class ResolvedAccountResult(BaseModel):
+    requested_account: str
+    valid: bool
+    uid: str | None = None
+    screen_name: str | None = None
+    profile_url: str | None = None
+    avatar_url: str | None = None
+    description: str | None = None
+    error: str | None = None
+
+
+class AccountResolveRequest(BaseModel):
+    accounts: list[str] = Field(default_factory=list)
+
+
+class FollowingListResponse(BaseModel):
+    uid: str
+    screen_name: str
+    page: int
+    page_size: int
+    total_number: int
+    has_next: bool
+    items: list[AccountSearchResult] = Field(default_factory=list)
 
 
 class FollowOperationRequest(BaseModel):

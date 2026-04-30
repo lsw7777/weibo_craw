@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+from html import unescape
 from contextlib import contextmanager
-from urllib.parse import quote
 
 from playwright.sync_api import Page, sync_playwright
+from requests import Session
 
 from app.core.config import settings
 from app.models.schemas import (
@@ -12,9 +13,10 @@ from app.models.schemas import (
     FollowOperationItem,
     FollowOperationRequest,
     FollowOperationResponse,
+    FollowingListResponse,
 )
 from app.services.browser_auth import BrowserCookieProvider
-from app.utils.text import extract_uid, normalize_profile_url, normalize_space
+from app.utils.text import extract_uid, normalize_profile_url, normalize_space, strip_html
 
 
 FOLLOW_PATTERN = re.compile(r"关注|已关注|互相关注")
@@ -23,17 +25,43 @@ FOLLOW_PATTERN = re.compile(r"关注|已关注|互相关注")
 class WeiboFollowService:
     def __init__(self) -> None:
         self.cookie_provider = BrowserCookieProvider()
+        self.session: Session = self.cookie_provider.build_requests_session()
 
     def search_accounts(self, query: str, limit: int = 10) -> list[AccountSearchResult]:
         normalized_query = normalize_space(query)
         if not normalized_query:
             return []
 
-        with self._page_session() as page:
-            search_url = f"https://s.weibo.com/user?q={quote(normalized_query)}"
-            page.goto(search_url, wait_until="domcontentloaded", timeout=60_000)
-            page.wait_for_timeout(2_000)
-            return self._parse_search_results(page, limit=limit)
+        response = self.session.get(
+            "https://s.weibo.com/user",
+            params={"q": normalized_query},
+            timeout=settings.request_timeout,
+            headers={"Referer": "https://s.weibo.com/"},
+        )
+        response.raise_for_status()
+        response.encoding = "utf-8"
+        return self._parse_search_html(response.text, limit=limit)
+
+    def list_following(self, page: int = 1, page_size: int = 20) -> FollowingListResponse:
+        uid, screen_name = self._get_current_user()
+        payload = self._get_json(
+            "https://weibo.com/ajax/friendships/friends",
+            params={"uid": uid, "page": page, "count": page_size},
+        )
+        users = payload.get("users", [])
+        items = [self._parse_user_item(user) for user in users[:page_size] if isinstance(user, dict)]
+        total_number = int(payload.get("total_number") or len(items))
+        next_cursor = int(payload.get("next_cursor") or 0)
+
+        return FollowingListResponse(
+            uid=uid,
+            screen_name=payload.get("screenName") or screen_name,
+            page=page,
+            page_size=page_size,
+            total_number=total_number,
+            has_next=bool(next_cursor) or page * page_size < total_number,
+            items=items,
+        )
 
     def apply_operation(self, payload: FollowOperationRequest) -> FollowOperationResponse:
         items: list[FollowOperationItem] = []
@@ -66,7 +94,7 @@ class WeiboFollowService:
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=settings.playwright_headless)
+                browser = self._launch_browser(playwright)
                 context = browser.new_context()
                 context.add_cookies(cookies)
                 page = context.new_page()
@@ -75,8 +103,102 @@ class WeiboFollowService:
                 browser.close()
         except Exception as exc:
             raise RuntimeError(
-                "Playwright 启动失败，请确认已安装浏览器运行时：python -m playwright install chromium"
+                f"Playwright 启动或页面操作失败：{exc}"
             ) from exc
+
+    def _launch_browser(self, playwright):
+        try:
+            return playwright.chromium.launch(headless=settings.playwright_headless)
+        except Exception as first_exc:
+            try:
+                return playwright.chromium.launch(channel="msedge", headless=settings.playwright_headless)
+            except Exception as second_exc:
+                raise RuntimeError(
+                    "无法启动 Playwright Chromium，也无法回退到本机 Edge。"
+                    f"Chromium 错误：{first_exc}; Edge 错误：{second_exc}"
+                ) from second_exc
+
+    def _get_json(self, url: str, params: dict) -> dict:
+        response = self.session.get(url, params=params, timeout=settings.request_timeout)
+        if response.status_code == 403:
+            raise RuntimeError("微博接口返回 403，请重新配置登录 Cookie。")
+        response.raise_for_status()
+        return response.json()
+
+    def _get_current_user(self) -> tuple[str, str]:
+        response = self.session.get("https://weibo.com/", timeout=settings.request_timeout)
+        response.raise_for_status()
+        response.encoding = "utf-8"
+        text = response.text
+        patterns = [
+            r":user=\"\{\s*id:\s*'(\d+)'.*?name:\s*'([^']*)'",
+            r'"uid"\s*:\s*"?(\d+)"?',
+            r"\$CONFIG\[['\"]uid['\"]\]\s*=\s*['\"]?(\d+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.S)
+            if not match:
+                continue
+            uid = match.group(1)
+            name = unescape(match.group(2)) if len(match.groups()) > 1 else f"用户{uid}"
+            return uid, normalize_space(name)
+        raise RuntimeError("无法识别当前登录账号 UID，请确认微博登录态仍有效。")
+
+    def _parse_search_html(self, html_text: str, limit: int) -> list[AccountSearchResult]:
+        results: list[AccountSearchResult] = []
+        seen: set[str] = set()
+        card_pattern = re.compile(
+            r'<div class="card card-user-b.*?(?=<div class="card card-user-b|\Z)',
+            flags=re.S,
+        )
+
+        for card_match in card_pattern.finditer(html_text):
+            card = card_match.group(0)
+            uid_match = re.search(r'href=["\'](?:https?:)?//weibo\.com/u/(\d+)', card)
+            if not uid_match:
+                continue
+            uid = uid_match.group(1)
+            if uid in seen:
+                continue
+
+            name_match = re.search(r'<a[^>]*class=["\']name["\'][^>]*>(.*?)</a>', card, flags=re.S)
+            name = strip_html(name_match.group(1)) if name_match else ""
+            if not name:
+                continue
+
+            avatar_match = re.search(r'<img[^>]+src=["\']([^"\']+)', card)
+            intro_match = re.search(r"<p[^>]*>(.*?)</p>", card, flags=re.S)
+            intro = strip_html(intro_match.group(1)) if intro_match else None
+
+            seen.add(uid)
+            results.append(
+                AccountSearchResult(
+                    uid=uid,
+                    screen_name=name,
+                    profile_url=f"https://weibo.com/u/{uid}",
+                    intro=intro,
+                    avatar_url=unescape(avatar_match.group(1)) if avatar_match else None,
+                    following="已关注" in card or "取消关注" in card,
+                )
+            )
+            if len(results) >= limit:
+                break
+
+        return results
+
+    def _parse_user_item(self, user: dict) -> AccountSearchResult:
+        uid = str(user.get("idstr") or user.get("id") or "")
+        return AccountSearchResult(
+            uid=uid,
+            screen_name=user.get("screen_name") or user.get("name") or uid,
+            profile_url=f"https://weibo.com/u/{uid}",
+            intro=normalize_space(user.get("description")),
+            avatar_url=user.get("profile_image_url") or user.get("avatar_large") or user.get("avatar_hd"),
+            followers_count=user.get("followers_count"),
+            friends_count=user.get("friends_count"),
+            statuses_count=user.get("statuses_count"),
+            following=user.get("following"),
+        )
 
     def _parse_search_results(self, page: Page, limit: int) -> list[AccountSearchResult]:
         results: list[AccountSearchResult] = []

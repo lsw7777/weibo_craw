@@ -1,7 +1,20 @@
 import { useEffect, useState } from "react";
 import {
+  CheckSquare,
+  Play,
+  RefreshCw,
+  Save,
+  Search,
+  UserMinus,
+  UserPlus,
+  Users,
+} from "lucide-react";
+import {
   batchFollow,
   getCookieStatus,
+  getFollowing,
+  resolveAccounts,
+  resolveAvatarUrl,
   resolveMediaUrl,
   saveCookieString,
   scrapeAccounts,
@@ -14,11 +27,39 @@ const DEFAULT_ACCOUNTS = [
   "https://weibo.com/u/2031482343",
 ].join("\n");
 
+const PAGE_SIZE = 20;
+
+function parseAccountInput(value) {
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function formatDate(value) {
   if (!value) {
     return "未知时间";
   }
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatCompactNumber(value) {
+  if (value === null || value === undefined) {
+    return "--";
+  }
+  if (value >= 10000) {
+    return `${(value / 10000).toFixed(1)}万`;
+  }
+  return String(value);
+}
+
+function IconButton({ children, icon: Icon, ...props }) {
+  return (
+    <button {...props}>
+      {Icon ? <Icon size={16} strokeWidth={2.2} /> : null}
+      <span>{children}</span>
+    </button>
+  );
 }
 
 function SentimentBadge({ value }) {
@@ -32,6 +73,30 @@ function MetricCard({ label, value, hint }) {
       <strong>{value}</strong>
       <span>{hint}</span>
     </div>
+  );
+}
+
+function AccountAvatar({ account, size = 48 }) {
+  const [failed, setFailed] = useState(false);
+  const label = (account.screen_name || account.uid || account.profile_url || "?").trim().slice(0, 1).toUpperCase();
+  const source = resolveAvatarUrl(account.avatar_url);
+
+  if (!source || failed) {
+    return (
+      <span className="account-avatar account-avatar-fallback" style={{ width: size, height: size }}>
+        {label}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      className="account-avatar"
+      src={source}
+      alt=""
+      style={{ width: size, height: size }}
+      onError={() => setFailed(true)}
+    />
   );
 }
 
@@ -51,6 +116,51 @@ function AuthStatusPill({ status }) {
   return <span className="status-pill status-error">登录态不可用</span>;
 }
 
+function SentimentChart({ analysis }) {
+  const rows = [
+    { label: "正面", value: analysis.positive_count, className: "tone-positive" },
+    { label: "负面", value: analysis.negative_count, className: "tone-negative" },
+    { label: "中性", value: analysis.neutral_count, className: "tone-neutral" },
+  ];
+  const total = rows.reduce((sum, row) => sum + row.value, 0) || 1;
+
+  return (
+    <div className="sentiment-chart" aria-label="态度分布">
+      {rows.map((row) => (
+        <div className="sentiment-row" key={row.label}>
+          <span>{row.label}</span>
+          <div className="bar-track">
+            <div className={`bar-fill ${row.className}`} style={{ width: `${(row.value / total) * 100}%` }} />
+          </div>
+          <strong>{row.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TopicChart({ topics }) {
+  const maxCount = Math.max(...topics.map((item) => item.count), 1);
+
+  if (!topics.length) {
+    return <p className="empty-text">暂无高频话题</p>;
+  }
+
+  return (
+    <div className="topic-chart">
+      {topics.map((item) => (
+        <div className="topic-row" key={item.topic}>
+          <span>{item.topic}</span>
+          <div className="bar-track">
+            <div className="bar-fill tone-topic" style={{ width: `${(item.count / maxCount) * 100}%` }} />
+          </div>
+          <strong>{item.count}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AnalysisPanel({ title, analysis }) {
   if (!analysis) {
     return null;
@@ -58,24 +168,158 @@ function AnalysisPanel({ title, analysis }) {
 
   return (
     <div className="analysis-panel">
-      <div className="section-title">
+      <div className="section-title compact-title">
         <h4>{title}</h4>
         <SentimentBadge value={analysis.sentiment} />
       </div>
-      <p>{analysis.summary}</p>
-      <div className="chip-group">
-        {analysis.topics.map((topic) => (
-          <span className="chip" key={topic}>
-            {topic}
-          </span>
+      <p className="summary-text">{analysis.summary}</p>
+
+      <div className="analysis-table-grid">
+        <section>
+          <h5>态度分布</h5>
+          <SentimentChart analysis={analysis} />
+        </section>
+        <section>
+          <h5>高频话题</h5>
+          <TopicChart topics={analysis.topic_stats || []} />
+        </section>
+      </div>
+
+      <table className="viewpoint-table">
+        <thead>
+          <tr>
+            <th>序号</th>
+            <th>代表观点</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(analysis.viewpoints.length ? analysis.viewpoints : ["暂无代表观点"]).map((viewpoint, index) => (
+            <tr key={`${viewpoint}-${index}`}>
+              <td>{index + 1}</td>
+              <td>{viewpoint}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AccountOption({ account, checked, onToggle }) {
+  return (
+    <label className={`account-option ${checked ? "account-option-active" : ""}`}>
+      <input type="checkbox" checked={checked} onChange={onToggle} />
+      <AccountAvatar account={account} />
+      <div>
+        <strong>{account.screen_name}</strong>
+        <a href={account.profile_url} target="_blank" rel="noreferrer">
+          {account.profile_url}
+        </a>
+        <p>{account.intro || "暂无简介"}</p>
+        <div className="account-stats">
+          <span>粉丝 {formatCompactNumber(account.followers_count)}</span>
+          <span>关注 {formatCompactNumber(account.friends_count)}</span>
+          <span>微博 {formatCompactNumber(account.statuses_count)}</span>
+        </div>
+      </div>
+    </label>
+  );
+}
+
+function ResultsSection({ scrapeResult }) {
+  if (!scrapeResult) {
+    return null;
+  }
+
+  return (
+    <section className="panel results-panel">
+      <div className="section-title">
+        <div>
+          <h2>抓取结果与分析</h2>
+          <p className="section-note">结果区单独占满页面宽度，避免配置栏和账号管理栏被长内容挤压。</p>
+        </div>
+        <span>生成时间 {formatDate(scrapeResult.generated_at)}</span>
+      </div>
+
+      <div className="result-stack">
+        {scrapeResult.results.map((account) => (
+          <article className="account-card" key={account.uid}>
+            <div className="account-header">
+              <div>
+                <h3>{account.screen_name}</h3>
+                <a href={account.profile_url} target="_blank" rel="noreferrer">
+                  {account.profile_url}
+                </a>
+                {account.description ? <p>{account.description}</p> : null}
+              </div>
+              <div className="account-meta">
+                <span>粉丝 {formatCompactNumber(account.followers_count)}</span>
+                <span>关注 {formatCompactNumber(account.friends_count)}</span>
+                <span>微博 {formatCompactNumber(account.statuses_count)}</span>
+              </div>
+            </div>
+
+            <div className="analysis-grid">
+              <AnalysisPanel title="发博分析" analysis={account.analysis.posts} />
+              <AnalysisPanel title="评论分析" analysis={account.analysis.comments} />
+            </div>
+
+            {account.export_file ? <p className="export-hint">导出文件：{account.export_file}</p> : null}
+
+            <details className="post-details">
+              <summary>查看 {account.posts.length} 条微博明细</summary>
+              <div className="post-list">
+                {account.posts.map((post) => (
+                  <section className="post-card" key={post.id}>
+                    <div className="post-head">
+                      <strong>{formatDate(post.created_at)}</strong>
+                      <span>
+                        转发 {post.reposts_count} / 评论 {post.comments_count} / 点赞 {post.attitudes_count}
+                      </span>
+                    </div>
+                    <p>{post.text}</p>
+
+                    {post.images.length ? (
+                      <div className="image-grid">
+                        {post.images.map((image) => (
+                          <a href={resolveMediaUrl(image)} key={image.url} target="_blank" rel="noreferrer">
+                            <img src={resolveMediaUrl(image)} alt="微博图片" loading="lazy" />
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {post.comments.length ? (
+                      <div className="comment-block">
+                        <h4>评论</h4>
+                        <ul className="plain-list">
+                          {post.comments.map((comment) => (
+                            <li key={comment.id}>
+                              <strong>{comment.author || "匿名"}</strong>
+                              <span>{formatDate(comment.created_at)}</span>
+                              <p>{comment.text}</p>
+                              {comment.images.length ? (
+                                <div className="comment-images">
+                                  {comment.images.map((image) => (
+                                    <a href={resolveMediaUrl(image)} key={image.url} target="_blank" rel="noreferrer">
+                                      查看评论图片
+                                    </a>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </section>
+                ))}
+              </div>
+            </details>
+          </article>
         ))}
       </div>
-      <ul className="plain-list">
-        {analysis.viewpoints.map((viewpoint) => (
-          <li key={viewpoint}>{viewpoint}</li>
-        ))}
-      </ul>
-    </div>
+    </section>
   );
 }
 
@@ -97,15 +341,21 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
 
+  const [accountMode, setAccountMode] = useState("following");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [searchResult, setSearchResult] = useState([]);
+  const [followingLoading, setFollowingLoading] = useState(false);
+  const [followingError, setFollowingError] = useState("");
+  const [followingPage, setFollowingPage] = useState(1);
+  const [followingResult, setFollowingResult] = useState(null);
   const [selectedTargets, setSelectedTargets] = useState([]);
   const [followLoading, setFollowLoading] = useState(false);
   const [followResult, setFollowResult] = useState(null);
 
   const selectedCount = selectedTargets.length;
+  const visibleAccounts = accountMode === "following" ? followingResult?.items || [] : searchResult;
 
   useEffect(() => {
     loadCookieStatus();
@@ -184,6 +434,7 @@ function App() {
 
   async function handleSearchSubmit(event) {
     event.preventDefault();
+    setAccountMode("search");
     setSearchLoading(true);
     setSearchError("");
     setFollowResult(null);
@@ -199,19 +450,47 @@ function App() {
     }
   }
 
+  async function loadFollowing(page = followingPage, clearFollowResult = true) {
+    setAccountMode("following");
+    setFollowingLoading(true);
+    setFollowingError("");
+    if (clearFollowResult) {
+      setFollowResult(null);
+    }
+
+    try {
+      const data = await getFollowing(page, PAGE_SIZE);
+      setFollowingResult(data);
+      setFollowingPage(page);
+      setSelectedTargets([]);
+    } catch (error) {
+      setFollowingError(error.message);
+    } finally {
+      setFollowingLoading(false);
+    }
+  }
+
   async function handleBatchAction(action) {
     if (!selectedTargets.length) {
       return;
     }
     setFollowLoading(true);
     setSearchError("");
+    setFollowingError("");
     setFollowResult(null);
 
     try {
       const data = await batchFollow(action, selectedTargets);
+      if (action === "unfollow" && accountMode === "following") {
+        await loadFollowing(followingPage, false);
+      }
       setFollowResult(data);
     } catch (error) {
-      setSearchError(error.message);
+      if (accountMode === "following") {
+        setFollowingError(error.message);
+      } else {
+        setSearchError(error.message);
+      }
     } finally {
       setFollowLoading(false);
     }
@@ -223,13 +502,24 @@ function App() {
     );
   }
 
+  function toggleAllVisible() {
+    const targets = visibleAccounts.map((account) => account.profile_url);
+    const allSelected = targets.length > 0 && targets.every((target) => selectedTargets.includes(target));
+    setSelectedTargets((current) => {
+      if (allSelected) {
+        return current.filter((target) => !targets.includes(target));
+      }
+      return [...new Set([...current, ...targets])];
+    });
+  }
+
   return (
     <div className="app-shell">
       <header className="hero">
         <div>
           <span className="eyebrow">React + FastAPI + Playwright</span>
           <h1>微博作战台</h1>
-          <p>批量抓取微博内容与评论，下载图片，搜索账号并执行批量关注/取关，同时输出话题、观点和态度摘要。</p>
+          <p>批量抓取微博内容与评论，管理关注列表，并以图表和表格查看账号话题、观点和态度。</p>
         </div>
         <div className="hero-grid">
           <MetricCard label="账号数" value={totals.accounts} hint="本次抓取结果" />
@@ -273,12 +563,12 @@ function App() {
               />
             </label>
             <div className="actions">
-              <button className="primary-button" type="submit" disabled={authLoading || !cookieString.trim()}>
-                {authLoading ? "处理中..." : "保存 Cookie"}
-              </button>
-              <button className="ghost-button" type="button" disabled={authLoading} onClick={loadCookieStatus}>
+              <IconButton className="primary-button" icon={Save} type="submit" disabled={authLoading || !cookieString.trim()}>
+                {authLoading ? "处理中" : "保存 Cookie"}
+              </IconButton>
+              <IconButton className="ghost-button" icon={RefreshCw} type="button" disabled={authLoading} onClick={loadCookieStatus}>
                 检测登录态
-              </button>
+              </IconButton>
             </div>
           </form>
         </div>
@@ -287,8 +577,8 @@ function App() {
       <main className="dashboard">
         <section className="panel">
           <div className="section-title">
-            <h2>抓取与分析</h2>
-            <span>按账号批量拉取博文、评论和图片</span>
+            <h2>抓取配置</h2>
+            <span>按账号、数量和时间范围抓取</span>
           </div>
           <form className="form-grid" onSubmit={handleScrapeSubmit}>
             <label className="field field-span">
@@ -366,160 +656,122 @@ function App() {
             </label>
 
             <div className="actions field-span">
-              <button className="primary-button" type="submit" disabled={scrapeLoading}>
-                {scrapeLoading ? "抓取中..." : "开始抓取"}
-              </button>
+              <IconButton className="primary-button" icon={Play} type="submit" disabled={scrapeLoading}>
+                {scrapeLoading ? "抓取中" : "开始抓取"}
+              </IconButton>
               {scrapeError ? <p className="error-text">{scrapeError}</p> : null}
             </div>
           </form>
-
-          {scrapeResult ? (
-            <div className="result-stack">
-              {scrapeResult.results.map((account) => (
-                <article className="account-card" key={account.uid}>
-                  <div className="account-header">
-                    <div>
-                      <h3>{account.screen_name}</h3>
-                      <a href={account.profile_url} target="_blank" rel="noreferrer">
-                        {account.profile_url}
-                      </a>
-                      {account.description ? <p>{account.description}</p> : null}
-                    </div>
-                    <div className="account-meta">
-                      <span>粉丝 {account.followers_count ?? "--"}</span>
-                      <span>关注 {account.friends_count ?? "--"}</span>
-                      <span>微博 {account.statuses_count ?? "--"}</span>
-                    </div>
-                  </div>
-
-                  <div className="analysis-grid">
-                    <AnalysisPanel title="发博分析" analysis={account.analysis.posts} />
-                    <AnalysisPanel title="评论分析" analysis={account.analysis.comments} />
-                  </div>
-
-                  {account.export_file ? <p className="export-hint">导出文件：{account.export_file}</p> : null}
-
-                  <div className="post-list">
-                    {account.posts.map((post) => (
-                      <section className="post-card" key={post.id}>
-                        <div className="post-head">
-                          <strong>{formatDate(post.created_at)}</strong>
-                          <span>
-                            转发 {post.reposts_count} / 评论 {post.comments_count} / 点赞 {post.attitudes_count}
-                          </span>
-                        </div>
-                        <p>{post.text}</p>
-
-                        {post.images.length ? (
-                          <div className="image-grid">
-                            {post.images.map((image) => (
-                              <a href={resolveMediaUrl(image)} key={image.url} target="_blank" rel="noreferrer">
-                                <img src={resolveMediaUrl(image)} alt="微博图片" loading="lazy" />
-                              </a>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {post.comments.length ? (
-                          <div className="comment-block">
-                            <h4>评论</h4>
-                            <ul className="plain-list">
-                              {post.comments.map((comment) => (
-                                <li key={comment.id}>
-                                  <strong>{comment.author || "匿名"}</strong>
-                                  <span>{formatDate(comment.created_at)}</span>
-                                  <p>{comment.text}</p>
-                                  {comment.images.length ? (
-                                    <div className="comment-images">
-                                      {comment.images.map((image) => (
-                                        <a
-                                          href={resolveMediaUrl(image)}
-                                          key={image.url}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                        >
-                                          查看评论图片
-                                        </a>
-                                      ))}
-                                    </div>
-                                  ) : null}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                      </section>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : null}
         </section>
 
-        <section className="panel">
+        <section className="panel account-manager">
           <div className="section-title">
-            <h2>账号搜索与关注管理</h2>
-            <span>搜索后选择多个账号，一次执行关注或取关</span>
+            <h2>账号管理</h2>
+            <span>搜索账号或从我的关注中批量取关</span>
           </div>
 
-          <form className="inline-form" onSubmit={handleSearchSubmit}>
-            <input
-              type="text"
-              value={searchKeyword}
-              onChange={(event) => setSearchKeyword(event.target.value)}
-              placeholder="输入微博昵称、关键词、UID"
-            />
-            <button className="primary-button" type="submit" disabled={searchLoading}>
-              {searchLoading ? "搜索中..." : "搜索账号"}
+          <div className="segmented-control">
+            <button
+              className={accountMode === "following" ? "active" : ""}
+              type="button"
+              onClick={() => setAccountMode("following")}
+            >
+              <Users size={16} />
+              <span>我的关注</span>
             </button>
-          </form>
+            <button
+              className={accountMode === "search" ? "active" : ""}
+              type="button"
+              onClick={() => setAccountMode("search")}
+            >
+              <Search size={16} />
+              <span>搜索账号</span>
+            </button>
+          </div>
+
+          {accountMode === "search" ? (
+            <form className="inline-form" onSubmit={handleSearchSubmit}>
+              <input
+                type="text"
+                value={searchKeyword}
+                onChange={(event) => setSearchKeyword(event.target.value)}
+                placeholder="输入微博昵称、关键词、UID"
+              />
+              <IconButton className="primary-button" icon={Search} type="submit" disabled={searchLoading || !searchKeyword.trim()}>
+                {searchLoading ? "搜索中" : "搜索账号"}
+              </IconButton>
+            </form>
+          ) : (
+            <div className="following-header">
+              <div>
+                <strong>{followingResult?.screen_name || "当前登录账号"}</strong>
+                <span>关注总数 {followingResult ? followingResult.total_number : "--"}</span>
+              </div>
+              <IconButton className="primary-button" icon={RefreshCw} type="button" disabled={followingLoading} onClick={() => loadFollowing(1)}>
+                {followingLoading ? "加载中" : "加载关注列表"}
+              </IconButton>
+            </div>
+          )}
 
           <div className="toolbar">
             <span>已选中 {selectedCount} 个账号</span>
             <div className="actions">
-              <button
+              <IconButton
+                className="ghost-button"
+                icon={CheckSquare}
+                type="button"
+                disabled={!visibleAccounts.length}
+                onClick={toggleAllVisible}
+              >
+                全选当前列表
+              </IconButton>
+              <IconButton
                 className="secondary-button"
+                icon={UserPlus}
                 type="button"
                 disabled={followLoading || !selectedCount}
                 onClick={() => handleBatchAction("follow")}
               >
                 批量关注
-              </button>
-              <button
+              </IconButton>
+              <IconButton
                 className="ghost-button"
+                icon={UserMinus}
                 type="button"
                 disabled={followLoading || !selectedCount}
                 onClick={() => handleBatchAction("unfollow")}
               >
                 批量取关
-              </button>
+              </IconButton>
             </div>
           </div>
 
-          {searchError ? <p className="error-text">{searchError}</p> : null}
+          {searchError && accountMode === "search" ? <p className="error-text">{searchError}</p> : null}
+          {followingError && accountMode === "following" ? <p className="error-text">{followingError}</p> : null}
 
-          <div className="search-result-grid">
-            {searchResult.map((account) => {
-              const checked = selectedTargets.includes(account.profile_url);
-              return (
-                <label className={`search-card ${checked ? "search-card-active" : ""}`} key={account.profile_url}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleTarget(account.profile_url)}
-                  />
-                  <div>
-                    <strong>{account.screen_name}</strong>
-                    <a href={account.profile_url} target="_blank" rel="noreferrer">
-                      {account.profile_url}
-                    </a>
-                    {account.intro ? <p>{account.intro}</p> : null}
-                  </div>
-                </label>
-              );
-            })}
+          <div className="account-list">
+            {visibleAccounts.map((account) => (
+              <AccountOption
+                account={account}
+                checked={selectedTargets.includes(account.profile_url)}
+                key={account.profile_url}
+                onToggle={() => toggleTarget(account.profile_url)}
+              />
+            ))}
+            {!visibleAccounts.length ? <p className="empty-text">当前列表暂无账号。</p> : null}
           </div>
+
+          {accountMode === "following" && followingResult ? (
+            <div className="pagination">
+              <button type="button" disabled={followingLoading || followingPage <= 1} onClick={() => loadFollowing(followingPage - 1)}>
+                上一页
+              </button>
+              <span>第 {followingPage} 页</span>
+              <button type="button" disabled={followingLoading || !followingResult.has_next} onClick={() => loadFollowing(followingPage + 1)}>
+                下一页
+              </button>
+            </div>
+          ) : null}
 
           {followResult ? (
             <div className="follow-result">
@@ -538,6 +790,8 @@ function App() {
           ) : null}
         </section>
       </main>
+
+      <ResultsSection scrapeResult={scrapeResult} />
     </div>
   );
 }

@@ -5,7 +5,7 @@ from collections import Counter
 import jieba
 
 from app.core.config import settings
-from app.models.schemas import AnalysisSection
+from app.models.schemas import AnalysisSection, TopicStat
 from app.utils.text import split_sentences, truncate_text, unique_preserve_order
 
 
@@ -86,6 +86,7 @@ class ContentAnalyzer:
             return AnalysisSection(
                 summary=f"{label}暂无可分析内容。",
                 topics=[],
+                topic_stats=[],
                 viewpoints=[],
                 sentiment="中性",
                 positive_count=0,
@@ -112,6 +113,10 @@ class ContentAnalyzer:
                 neutral_count += 1
 
         topics = [word for word, _ in topic_counter.most_common(settings.analysis_top_k)]
+        topic_stats = [
+            TopicStat(topic=word, count=count)
+            for word, count in topic_counter.most_common(settings.analysis_top_k)
+        ]
         sentiment = self._label_sentiment(positive_count, negative_count, neutral_count)
         viewpoints = self._select_viewpoints(all_sentences, topics)
         summary = self._build_summary(
@@ -127,6 +132,7 @@ class ContentAnalyzer:
         return AnalysisSection(
             summary=summary,
             topics=topics,
+            topic_stats=topic_stats,
             viewpoints=viewpoints,
             sentiment=sentiment,
             positive_count=positive_count,

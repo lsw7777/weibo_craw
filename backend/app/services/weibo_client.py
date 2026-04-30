@@ -14,6 +14,7 @@ from app.models.schemas import (
     CommentData,
     MediaAsset,
     PostData,
+    ResolvedAccountResult,
     ScrapeRequest,
     ScrapeResponse,
     ScrapedAccountResult,
@@ -96,10 +97,55 @@ class WeiboCrawlerService:
         return {
             "screen_name": user.get("screen_name") or user.get("name"),
             "description": normalize_space(user.get("description")),
+            "avatar_url": user.get("avatar_large") or user.get("avatar_hd") or user.get("profile_image_url"),
             "followers_count": user.get("followers_count"),
             "friends_count": user.get("friends_count"),
             "statuses_count": user.get("statuses_count"),
         }
+
+    def resolve_accounts(self, accounts: list[str]) -> list[ResolvedAccountResult]:
+        results: list[ResolvedAccountResult] = []
+        for account in accounts:
+            requested = normalize_space(account)
+            if not requested:
+                continue
+            uid = extract_uid(requested)
+            if not uid:
+                results.append(
+                    ResolvedAccountResult(
+                        requested_account=requested,
+                        valid=False,
+                        error="账号格式不正确，请输入 UID 或 https://weibo.com/u/数字UID",
+                    )
+                )
+                continue
+
+            try:
+                profile = self.fetch_profile(uid)
+            except Exception as exc:
+                results.append(
+                    ResolvedAccountResult(
+                        requested_account=requested,
+                        valid=False,
+                        uid=uid,
+                        profile_url=f"https://weibo.com/u/{uid}",
+                        error=str(exc),
+                    )
+                )
+                continue
+
+            results.append(
+                ResolvedAccountResult(
+                    requested_account=requested,
+                    valid=True,
+                    uid=uid,
+                    screen_name=profile.get("screen_name") or uid,
+                    profile_url=f"https://weibo.com/u/{uid}",
+                    avatar_url=profile.get("avatar_url"),
+                    description=profile.get("description"),
+                )
+            )
+        return results
 
     def fetch_posts(
         self,
