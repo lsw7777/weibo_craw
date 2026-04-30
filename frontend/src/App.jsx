@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   CheckSquare,
+  ChevronDown,
   Play,
   RefreshCw,
   Save,
@@ -372,6 +373,8 @@ function App() {
   const [cookieString, setCookieString] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [authPanelOpen, setAuthPanelOpen] = useState(false);
+  const [accountEditorOpen, setAccountEditorOpen] = useState(false);
 
   const [accountMode, setAccountMode] = useState("following");
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -389,6 +392,7 @@ function App() {
   const visibleAccounts = accountMode === "following" ? followingResult?.items || [] : searchResult;
   const selectedVisibleAccounts = visibleAccounts.filter((account) => selectedTargets.includes(account.profile_url));
   const selectedCount = selectedVisibleAccounts.length;
+  const accountInputCount = parseAccountInput(scrapeForm.accounts).length;
 
   useEffect(() => {
     loadCookieStatus();
@@ -447,6 +451,7 @@ function App() {
     try {
       const data = await getCookieStatus();
       setAuthStatus(data);
+      setCookieString(data.cookie_string || "");
       setAuthMessage(data.message);
     } catch (error) {
       setAuthMessage(error.message);
@@ -462,7 +467,7 @@ function App() {
     try {
       const data = await saveCookieString(cookieString);
       setAuthStatus(data);
-      setCookieString("");
+      setCookieString(data.cookie_string || cookieString);
       setAuthMessage(data.message);
     } catch (error) {
       setAuthMessage(error.message);
@@ -615,70 +620,98 @@ function App() {
       </header>
 
       <section className="panel auth-panel">
-        <div className="section-title">
+        <div className="section-title collapsible-title">
           <div>
             <h2>登录态设置</h2>
             <p className="section-note">
               Edge 已登录只说明浏览器可访问微博。后端需要读取微博 Cookie；如果 Cookie 数据库被 Windows 锁定，就需要在这里填写一次请求 Cookie。
             </p>
           </div>
-          <AuthStatusPill status={authStatus} />
-        </div>
-
-        <div className="auth-grid">
-          <div className="auth-guide">
-            <ol className="tutorial-list">
-              <li>在 Edge 打开微博页面并保持登录。</li>
-              <li>按 F12 打开开发者工具，进入“网络 / Network”，刷新页面。</li>
-              <li>
-                点开任意 <code>weibo.com/ajax/...</code> 请求，在 Request Headers 中复制 <code>Cookie</code> 整行内容。
-              </li>
-              <li>粘贴到右侧输入框，点击“保存 Cookie”。</li>
-            </ol>
-            <p className="auth-message">{authMessage || "Cookie 只保存在本机 backend/.env，前端不会回显完整 Cookie。"}</p>
+          <div className="title-actions">
+            <AuthStatusPill status={authStatus} />
+            <button
+              aria-expanded={authPanelOpen}
+              className="collapse-toggle"
+              type="button"
+              onClick={() => setAuthPanelOpen((current) => !current)}
+            >
+              <ChevronDown className={authPanelOpen ? "collapse-icon open" : "collapse-icon"} size={16} />
+              <span>{authPanelOpen ? "收起设置" : "展开设置"}</span>
+            </button>
           </div>
-
-          <form className="auth-form" onSubmit={handleCookieSave}>
-            <label className="field">
-              <span>微博请求 Cookie</span>
-              <textarea
-                rows="4"
-                value={cookieString}
-                onChange={(event) => setCookieString(event.target.value)}
-                placeholder="SUB=...; XSRF-TOKEN=...; ..."
-              />
-            </label>
-            <div className="actions">
-              <IconButton className="primary-button" icon={Save} type="submit" disabled={authLoading || !cookieString.trim()}>
-                {authLoading ? "处理中" : "保存 Cookie"}
-              </IconButton>
-              <IconButton className="ghost-button" icon={RefreshCw} type="button" disabled={authLoading} onClick={loadCookieStatus}>
-                检测登录态
-              </IconButton>
-            </div>
-          </form>
         </div>
+
+        {authPanelOpen ? (
+          <div className="auth-grid">
+            <div className="auth-guide">
+              <ol className="tutorial-list">
+                <li>在 Edge 打开微博页面并保持登录。</li>
+                <li>按 F12 打开开发者工具，进入“网络 / Network”，刷新页面。</li>
+                <li>
+                  点开任意 <code>weibo.com/ajax/...</code> 请求，在 Request Headers 中复制 <code>Cookie</code> 整行内容。
+                </li>
+                <li>粘贴到右侧输入框，点击“保存 Cookie”。</li>
+              </ol>
+              <p className="auth-message">{authMessage || "Cookie 保存在本机 backend/.env，可在此处查看和更新。"}</p>
+            </div>
+
+            <form className="auth-form" onSubmit={handleCookieSave}>
+              <label className="field">
+                <span>微博请求 Cookie</span>
+                <textarea
+                  rows="4"
+                  value={cookieString}
+                  onChange={(event) => setCookieString(event.target.value)}
+                  placeholder="SUB=...; XSRF-TOKEN=...; ..."
+                />
+              </label>
+              <div className="actions">
+                <IconButton className="primary-button" icon={Save} type="submit" disabled={authLoading || !cookieString.trim()}>
+                  {authLoading ? "处理中" : "保存 Cookie"}
+                </IconButton>
+                <IconButton className="ghost-button" icon={RefreshCw} type="button" disabled={authLoading} onClick={loadCookieStatus}>
+                  检测登录态
+                </IconButton>
+              </div>
+            </form>
+          </div>
+        ) : null}
       </section>
 
       <main className="dashboard">
-        <section className="panel">
+        <section className="panel scrape-panel">
           <div className="section-title">
             <h2>抓取配置</h2>
             <span>按账号、数量和时间范围抓取</span>
           </div>
           <form className="form-grid" onSubmit={handleScrapeSubmit}>
-            <label className="field field-span">
-              <span>微博账号 URL / UID</span>
-              <textarea
-                rows="5"
-                value={scrapeForm.accounts}
-                onChange={(event) => setScrapeForm((current) => ({ ...current, accounts: event.target.value }))}
-                placeholder="每行一个账号"
-              />
-            </label>
-
-            <div className="field-span">
-              <ResolvePreview accounts={resolvedAccounts} loading={resolveLoading} error={resolveError} />
+            <div className="field field-span collapsible-field">
+              <div className="field-collapse-head">
+                <div>
+                  <span>微博账号 URL / UID</span>
+                  <p>已填写 {accountInputCount} 个账号，展开后可编辑或粘贴多行。</p>
+                </div>
+                <button
+                  aria-expanded={accountEditorOpen}
+                  className="collapse-toggle"
+                  type="button"
+                  onClick={() => setAccountEditorOpen((current) => !current)}
+                >
+                  <ChevronDown className={accountEditorOpen ? "collapse-icon open" : "collapse-icon"} size={16} />
+                  <span>{accountEditorOpen ? "收起账号" : "展开账号"}</span>
+                </button>
+              </div>
+              {accountEditorOpen ? (
+                <>
+                  <textarea
+                    rows="5"
+                    value={scrapeForm.accounts}
+                    onChange={(event) => setScrapeForm((current) => ({ ...current, accounts: event.target.value }))}
+                    placeholder="每行一个账号"
+                  />
+                  <ResolvePreview accounts={resolvedAccounts} loading={resolveLoading} error={resolveError} />
+                </>
+              ) : null}
             </div>
 
             <label className="field">
@@ -793,9 +826,10 @@ function App() {
             </form>
           ) : (
             <div className="following-header">
-              <div>
+              <div className="following-meta">
                 <strong>{followingResult?.screen_name || "当前登录账号"}</strong>
-                <span>关注总数 {followingResult ? followingResult.total_number : "--"}（若包含已注销账号，该数目可能不准确）</span>
+                <span>关注总数 {followingResult ? followingResult.total_number : "--"}</span>
+                <span className="following-note">（若包含已注销账号，该数目可能不准确）</span>
               </div>
               <IconButton className="primary-button" icon={RefreshCw} type="button" disabled={followingLoading} onClick={() => loadFollowing(1)}>
                 {followingLoading ? "加载中" : "加载关注列表"}
@@ -813,7 +847,7 @@ function App() {
                 disabled={!visibleAccounts.length}
                 onClick={toggleAllVisible}
               >
-                全选当前列表
+                全选列表
               </IconButton>
               {accountMode === "search" ? (
                 <IconButton

@@ -13,6 +13,7 @@ COOKIE_KEY = "WEIBO_COOKIE_STRING"
 class AuthConfigService:
     def get_status(self) -> AuthCookieStatus:
         configured = bool(settings.cookie_string and settings.cookie_string.strip())
+        saved_cookie_string = settings.cookie_string.strip() if configured and settings.cookie_string else ""
         source = "manual" if configured else "browser"
         try:
             cookies = BrowserCookieProvider().build_playwright_cookies()
@@ -23,6 +24,7 @@ class AuthConfigService:
                 source=source if configured else "none",
                 cookie_count=0,
                 message=str(exc),
+                cookie_string=saved_cookie_string,
             )
 
         return AuthCookieStatus(
@@ -31,6 +33,7 @@ class AuthConfigService:
             source=source,
             cookie_count=len(cookies),
             message="已读取微博登录态。",
+            cookie_string=saved_cookie_string,
         )
 
     def save_cookie_string(self, cookie_string: str) -> AuthCookieStatus:

@@ -148,6 +148,7 @@ class AuthCookieStatus(BaseModel):
     source: Literal["manual", "browser", "none"]
     cookie_count: int = 0
     message: str
+    cookie_string: str = ""
 
 
 class AuthCookieUpdateRequest(BaseModel):
