@@ -68,15 +68,14 @@ class WeiboFollowService:
         success_count = 0
         failure_count = 0
 
-        with self._page_session() as page:
-            for target in payload.targets:
-                try:
-                    detail = self._apply_single_action(page=page, target=target, action=payload.action)
-                    items.append(FollowOperationItem(target=target, status="success", detail=detail))
-                    success_count += 1
-                except Exception as exc:
-                    items.append(FollowOperationItem(target=target, status="failed", detail=str(exc)))
-                    failure_count += 1
+        for target in payload.targets:
+            try:
+                detail = self._apply_single_http_action(target=target, action=payload.action)
+                items.append(FollowOperationItem(target=target, status="success", detail=detail))
+                success_count += 1
+            except Exception as exc:
+                items.append(FollowOperationItem(target=target, status="failed", detail=str(exc)))
+                failure_count += 1
 
         return FollowOperationResponse(
             action=payload.action,
@@ -84,6 +83,73 @@ class WeiboFollowService:
             failure_count=failure_count,
             items=items,
         )
+
+    def _apply_single_http_action(self, target: str, action: str) -> str:
+        uid = extract_uid(target)
+        if not uid:
+            raise RuntimeError(f"无法识别账号 UID: {target}")
+
+        profile_url = f"https://weibo.com/u/{uid}"
+        headers = {
+            "Referer": profile_url,
+            "Origin": "https://weibo.com",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        xsrf_token = self.session.cookies.get("XSRF-TOKEN")
+        if xsrf_token:
+            headers["X-XSRF-TOKEN"] = xsrf_token
+
+        if action == "follow":
+            response = self.session.post(
+                "https://weibo.com/aj/f/followed",
+                params={"ajwvr": 6},
+                data={
+                    "uid": uid,
+                    "objectid": "",
+                    "f": "1",
+                    "extra": "",
+                    "refer_sort": "",
+                    "refer_flag": "1005050001_",
+                    "location": "page_100505_home",
+                    "oid": uid,
+                    "wforce": "1",
+                    "nogroup": "false",
+                    "_t": "0",
+                },
+                headers=headers,
+                timeout=settings.request_timeout,
+            )
+            return self._parse_operation_response(response=response, success_text="关注成功")
+
+        response = self.session.post(
+            "https://weibo.com/aj/f/unfollow",
+            params={"ajwvr": 6},
+            data={
+                "uid": uid,
+                "f": "1",
+                "refer_flag": "1005050001_",
+                "location": "page_100505_home",
+                "_t": "0",
+            },
+            headers=headers,
+            timeout=settings.request_timeout,
+        )
+        return self._parse_operation_response(response=response, success_text="取关成功")
+
+    def _parse_operation_response(self, response, success_text: str) -> str:
+        if response.status_code == 403:
+            raise RuntimeError("微博接口返回 403，请重新配置登录 Cookie。")
+        response.raise_for_status()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError(f"微博关注接口返回非 JSON 数据: {response.text[:120]}") from exc
+
+        code = str(payload.get("code", ""))
+        message = normalize_space(payload.get("msg")) or success_text
+        if code == "100000":
+            return message if message != "" else success_text
+        raise RuntimeError(message or f"微博接口返回错误码 {code}")
 
     @contextmanager
     def _page_session(self):

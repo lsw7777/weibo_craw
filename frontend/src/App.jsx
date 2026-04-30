@@ -226,6 +226,35 @@ function AccountOption({ account, checked, onToggle }) {
   );
 }
 
+function ResolvePreview({ accounts, loading, error }) {
+  if (loading) {
+    return <p className="resolve-status">正在校验账号...</p>;
+  }
+
+  if (error) {
+    return <p className="error-text">{error}</p>;
+  }
+
+  if (!accounts.length) {
+    return null;
+  }
+
+  return (
+    <div className="resolve-preview">
+      {accounts.map((account) => (
+        <div className={`resolve-item ${account.valid ? "resolve-valid" : "resolve-invalid"}`} key={account.requested_account}>
+          {account.valid ? <AccountAvatar account={account} size={40} /> : <span className="resolve-invalid-icon">!</span>}
+          <div>
+            <strong>{account.valid ? account.screen_name : account.requested_account}</strong>
+            <span>{account.valid ? account.profile_url : account.error}</span>
+            {account.description ? <p>{account.description}</p> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ResultsSection({ scrapeResult }) {
   if (!scrapeResult) {
     return null;
@@ -336,6 +365,9 @@ function App() {
   const [scrapeLoading, setScrapeLoading] = useState(false);
   const [scrapeError, setScrapeError] = useState("");
   const [scrapeResult, setScrapeResult] = useState(null);
+  const [resolvedAccounts, setResolvedAccounts] = useState([]);
+  const [resolveLoading, setResolveLoading] = useState(false);
+  const [resolveError, setResolveError] = useState("");
   const [authStatus, setAuthStatus] = useState(null);
   const [cookieString, setCookieString] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -360,6 +392,42 @@ function App() {
   useEffect(() => {
     loadCookieStatus();
   }, []);
+
+  useEffect(() => {
+    const accounts = parseAccountInput(scrapeForm.accounts);
+    if (!accounts.length) {
+      setResolvedAccounts([]);
+      setResolveError("");
+      setResolveLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setResolveLoading(true);
+      setResolveError("");
+      try {
+        const data = await resolveAccounts(accounts);
+        if (!cancelled) {
+          setResolvedAccounts(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setResolveError(error.message);
+          setResolvedAccounts([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setResolveLoading(false);
+        }
+      }
+    }, 650);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [scrapeForm.accounts]);
 
   const totals = !scrapeResult
     ? { accounts: 0, posts: 0, comments: 0 }
@@ -408,10 +476,7 @@ function App() {
     setScrapeError("");
     setScrapeResult(null);
 
-    const accounts = scrapeForm.accounts
-      .split(/\r?\n|,/)
-      .map((item) => item.trim())
-      .filter(Boolean);
+    const accounts = parseAccountInput(scrapeForm.accounts);
 
     try {
       const data = await scrapeAccounts({
@@ -513,6 +578,26 @@ function App() {
     });
   }
 
+  function addAccountsToScrapeList(accounts) {
+    const urls = accounts
+      .map((account) => account.profile_url || (account.uid ? `https://weibo.com/u/${account.uid}` : ""))
+      .filter(Boolean);
+    if (!urls.length) {
+      return;
+    }
+
+    setScrapeForm((current) => {
+      const existing = parseAccountInput(current.accounts);
+      const merged = [...new Set([...existing, ...urls])];
+      return { ...current, accounts: merged.join("\n") };
+    });
+  }
+
+  function addSelectedSearchToScrapeList() {
+    const selected = searchResult.filter((account) => selectedTargets.includes(account.profile_url));
+    addAccountsToScrapeList(selected);
+  }
+
   return (
     <div className="app-shell">
       <header className="hero">
@@ -590,6 +675,10 @@ function App() {
                 placeholder="每行一个账号"
               />
             </label>
+
+            <div className="field-span">
+              <ResolvePreview accounts={resolvedAccounts} loading={resolveLoading} error={resolveError} />
+            </div>
 
             <label className="field">
               <span>最多抓取博文数</span>
@@ -734,6 +823,17 @@ function App() {
               >
                 批量关注
               </IconButton>
+              {accountMode === "search" ? (
+                <IconButton
+                  className="secondary-button"
+                  icon={Play}
+                  type="button"
+                  disabled={!selectedCount}
+                  onClick={addSelectedSearchToScrapeList}
+                >
+                  加入待爬取
+                </IconButton>
+              ) : null}
               <IconButton
                 className="ghost-button"
                 icon={UserMinus}

@@ -675,11 +675,25 @@ textarea {
   margin-top: 16px;
 }
 
+.account-avatar,
 .account-option img {
   width: 48px;
   height: 48px;
   border-radius: 50%;
   object-fit: cover;
+}
+
+.account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.account-avatar-fallback {
+  background: linear-gradient(135deg, rgba(28, 94, 168, 0.16), rgba(212, 85, 0, 0.14));
+  color: #18375b;
+  font-weight: 700;
 }
 
 .account-option strong,
@@ -735,6 +749,71 @@ textarea {
 .empty-text {
   margin: 0;
   color: var(--muted);
+}
+
+.resolve-status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.resolve-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.resolve-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(21, 34, 51, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.resolve-valid {
+  border-color: rgba(42, 168, 111, 0.2);
+}
+
+.resolve-invalid {
+  border-color: rgba(212, 91, 76, 0.26);
+}
+
+.resolve-invalid-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--danger-bg);
+  color: #b43329;
+  font-weight: 700;
+}
+
+.resolve-item strong,
+.resolve-item span,
+.resolve-item p {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.resolve-item span {
+  color: var(--secondary);
+  font-size: 13px;
+}
+
+.resolve-item p {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .post-details {
@@ -794,6 +873,7 @@ textarea {
     grid-template-columns: 18px 42px minmax(0, 1fr);
   }
 
+  .account-avatar,
   .account-option img {
     width: 42px;
     height: 42px;
