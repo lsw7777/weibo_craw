@@ -375,6 +375,7 @@ function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
   const [accountEditorOpen, setAccountEditorOpen] = useState(false);
+  const [accountManagerOpen, setAccountManagerOpen] = useState(false);
 
   const [accountMode, setAccountMode] = useState("following");
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -608,7 +609,7 @@ function App() {
     <div className="app-shell">
       <header className="hero">
         <div>
-          <span className="eyebrow">React + FastAPI + Playwright</span>
+          <span className="eyebrow">React + FastAPI + Playwright + JIEBA</span>
           <h1>微博作战台</h1>
           <p>批量抓取微博内容与评论，管理关注列表，并以图表和表格查看账号话题、观点和态度。</p>
         </div>
@@ -788,140 +789,155 @@ function App() {
         </section>
 
         <section className="panel account-manager">
-          <div className="section-title">
-            <h2>账号管理</h2>
-            <span>搜索账号或从我的关注中批量取关</span>
-          </div>
-
-          <div className="segmented-control">
-            <button
-              className={accountMode === "following" ? "active" : ""}
-              type="button"
-              onClick={() => setAccountMode("following")}
-            >
-              <Users size={16} />
-              <span>我的关注</span>
-            </button>
-            <button
-              className={accountMode === "search" ? "active" : ""}
-              type="button"
-              onClick={() => setAccountMode("search")}
-            >
-              <Search size={16} />
-              <span>搜索账号</span>
-            </button>
-          </div>
-
-          {accountMode === "search" ? (
-            <form className="inline-form" onSubmit={handleSearchSubmit}>
-              <input
-                type="text"
-                value={searchKeyword}
-                onChange={(event) => setSearchKeyword(event.target.value)}
-                placeholder="输入微博昵称、关键词、UID"
-              />
-              <IconButton className="primary-button" icon={Search} type="submit" disabled={searchLoading || !searchKeyword.trim()}>
-                {searchLoading ? "搜索中" : "搜索账号"}
-              </IconButton>
-            </form>
-          ) : (
-            <div className="following-header">
-              <div className="following-meta">
-                <strong>{followingResult?.screen_name || "当前登录账号"}</strong>
-                <span>关注总数 {followingResult ? followingResult.total_number : "--"}</span>
-                <span className="following-note">（若包含已注销账号，该数目可能不准确）</span>
-              </div>
-              <IconButton className="primary-button" icon={RefreshCw} type="button" disabled={followingLoading} onClick={() => loadFollowing(1)}>
-                {followingLoading ? "加载中" : "加载关注列表"}
-              </IconButton>
+          <div className="section-title collapsible-title">
+            <div>
+              <h2>账号管理</h2>
+              <span>搜索账号或从我的关注中批量取关</span>
             </div>
-          )}
+            <button
+              aria-expanded={accountManagerOpen}
+              className="collapse-toggle"
+              type="button"
+              onClick={() => setAccountManagerOpen((current) => !current)}
+            >
+              <ChevronDown className={accountManagerOpen ? "collapse-icon open" : "collapse-icon"} size={16} />
+              <span>{accountManagerOpen ? "收起管理" : "展开管理"}</span>
+            </button>
+          </div>
 
-          <div className="toolbar account-toolbar">
-            <span>已选中 {selectedCount} 个账号</span>
-            <div className="actions account-toolbar-actions">
-              <IconButton
-                className="ghost-button"
-                icon={CheckSquare}
-                type="button"
-                disabled={!visibleAccounts.length}
-                onClick={toggleAllVisible}
-              >
-                全选列表
-              </IconButton>
-              {accountMode === "search" ? (
-                <IconButton
-                  className="secondary-button"
-                  icon={UserPlus}
+          {accountManagerOpen ? (
+            <>
+              <div className="segmented-control">
+                <button
+                  className={accountMode === "following" ? "active" : ""}
                   type="button"
-                  disabled={followLoading || !selectedCount}
-                  onClick={() => handleBatchAction("follow")}
+                  onClick={() => setAccountMode("following")}
                 >
-                  批量关注
-                </IconButton>
-              ) : null}
-              <IconButton
-                className="ghost-button"
-                icon={UserMinus}
-                type="button"
-                disabled={followLoading || !selectedCount}
-                onClick={() => handleBatchAction("unfollow")}
-              >
-                批量取关
-              </IconButton>
-              <IconButton
-                className="secondary-button"
-                icon={Play}
-                type="button"
-                disabled={!selectedCount}
-                onClick={addSelectedVisibleToScrapeList}
-              >
-                加入待爬取
-              </IconButton>
-            </div>
-          </div>
+                  <Users size={16} />
+                  <span>我的关注</span>
+                </button>
+                <button
+                  className={accountMode === "search" ? "active" : ""}
+                  type="button"
+                  onClick={() => setAccountMode("search")}
+                >
+                  <Search size={16} />
+                  <span>搜索账号</span>
+                </button>
+              </div>
 
-          {searchError && accountMode === "search" ? <p className="error-text">{searchError}</p> : null}
-          {followingError && accountMode === "following" ? <p className="error-text">{followingError}</p> : null}
+              {accountMode === "search" ? (
+                <form className="inline-form" onSubmit={handleSearchSubmit}>
+                  <input
+                    type="text"
+                    value={searchKeyword}
+                    onChange={(event) => setSearchKeyword(event.target.value)}
+                    placeholder="输入微博昵称、关键词、UID"
+                  />
+                  <IconButton className="primary-button" icon={Search} type="submit" disabled={searchLoading || !searchKeyword.trim()}>
+                    {searchLoading ? "搜索中" : "搜索账号"}
+                  </IconButton>
+                </form>
+              ) : (
+                <div className="following-header">
+                  <div className="following-meta">
+                    <strong>{followingResult?.screen_name || "当前登录账号"}</strong>
+                    <span>关注总数 {followingResult ? followingResult.total_number : "--"}</span>
+                    <span className="following-note">（若包含已注销账号，该数目可能不准确）</span>
+                  </div>
+                  <IconButton className="primary-button" icon={RefreshCw} type="button" disabled={followingLoading} onClick={() => loadFollowing(1)}>
+                    {followingLoading ? "加载中" : "加载关注列表"}
+                  </IconButton>
+                </div>
+              )}
 
-          <div className="account-list">
-            {visibleAccounts.map((account) => (
-              <AccountOption
-                account={account}
-                checked={selectedTargets.includes(account.profile_url)}
-                key={account.profile_url}
-                onToggle={() => toggleTarget(account.profile_url)}
-              />
-            ))}
-            {!visibleAccounts.length ? <p className="empty-text">当前列表暂无账号。</p> : null}
-          </div>
+              <div className="toolbar account-toolbar">
+                <span>已选中 {selectedCount} 个账号</span>
+                <div className="actions account-toolbar-actions">
+                  <IconButton
+                    className="ghost-button"
+                    icon={CheckSquare}
+                    type="button"
+                    disabled={!visibleAccounts.length}
+                    onClick={toggleAllVisible}
+                  >
+                    全选列表
+                  </IconButton>
+                  {accountMode === "search" ? (
+                    <IconButton
+                      className="secondary-button"
+                      icon={UserPlus}
+                      type="button"
+                      disabled={followLoading || !selectedCount}
+                      onClick={() => handleBatchAction("follow")}
+                    >
+                      批量关注
+                    </IconButton>
+                  ) : null}
+                  <IconButton
+                    className="ghost-button"
+                    icon={UserMinus}
+                    type="button"
+                    disabled={followLoading || !selectedCount}
+                    onClick={() => handleBatchAction("unfollow")}
+                  >
+                    批量取关
+                  </IconButton>
+                  <IconButton
+                    className="secondary-button"
+                    icon={Play}
+                    type="button"
+                    disabled={!selectedCount}
+                    onClick={addSelectedVisibleToScrapeList}
+                  >
+                    加入待爬取
+                  </IconButton>
+                </div>
+              </div>
 
-          {accountMode === "following" && followingResult ? (
-            <div className="pagination">
-              <button type="button" disabled={followingLoading || followingPage <= 1} onClick={() => loadFollowing(followingPage - 1)}>
-                上一页
-              </button>
-              <span>第 {followingPage} 页</span>
-              <button type="button" disabled={followingLoading || !followingResult.has_next} onClick={() => loadFollowing(followingPage + 1)}>
-                下一页
-              </button>
-            </div>
-          ) : null}
+              {searchError && accountMode === "search" ? <p className="error-text">{searchError}</p> : null}
+              {followingError && accountMode === "following" ? <p className="error-text">{followingError}</p> : null}
 
-          {followResult ? (
-            <div className="follow-result">
-              <p>
-                本次 {followResult.action === "follow" ? "关注" : "取关"} 完成：成功 {followResult.success_count}，
-                失败 {followResult.failure_count}
-              </p>
-              <ul className="plain-list">
-                {followResult.items.map((item) => (
-                  <li key={`${item.target}-${item.detail}`}>
-                    <strong>{item.target}</strong> - {item.status} - {item.detail}
-                  </li>
+              <div className="account-list">
+                {visibleAccounts.map((account) => (
+                  <AccountOption
+                    account={account}
+                    checked={selectedTargets.includes(account.profile_url)}
+                    key={account.profile_url}
+                    onToggle={() => toggleTarget(account.profile_url)}
+                  />
                 ))}
-              </ul>
-            </div>
+                {!visibleAccounts.length ? <p className="empty-text">当前列表暂无账号。</p> : null}
+              </div>
+
+              {accountMode === "following" && followingResult ? (
+                <div className="pagination">
+                  <button type="button" disabled={followingLoading || followingPage <= 1} onClick={() => loadFollowing(followingPage - 1)}>
+                    上一页
+                  </button>
+                  <span>第 {followingPage} 页</span>
+                  <button type="button" disabled={followingLoading || !followingResult.has_next} onClick={() => loadFollowing(followingPage + 1)}>
+                    下一页
+                  </button>
+                </div>
+              ) : null}
+
+              {followResult ? (
+                <div className="follow-result">
+                  <p>
+                    本次 {followResult.action === "follow" ? "关注" : "取关"} 完成：成功 {followResult.success_count}，
+                    失败 {followResult.failure_count}
+                  </p>
+                  <ul className="plain-list">
+                    {followResult.items.map((item) => (
+                      <li key={`${item.target}-${item.detail}`}>
+                        <strong>{item.target}</strong> - {item.status} - {item.detail}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </section>
       </main>
