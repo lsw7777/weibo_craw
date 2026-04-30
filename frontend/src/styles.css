@@ -900,14 +900,19 @@ textarea {
 }
 
 .resolve-preview {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
 }
 
 .resolve-item {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
+  flex: 0 0 240px;
   gap: 8px;
   align-items: center;
   padding: 8px;
@@ -946,6 +951,7 @@ textarea {
 .resolve-item span {
   color: var(--secondary);
   font-size: 12px;
+  word-break: break-all;
 }
 
 .resolve-item p {
