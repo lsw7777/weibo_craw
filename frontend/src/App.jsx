@@ -386,8 +386,9 @@ function App() {
   const [followLoading, setFollowLoading] = useState(false);
   const [followResult, setFollowResult] = useState(null);
 
-  const selectedCount = selectedTargets.length;
   const visibleAccounts = accountMode === "following" ? followingResult?.items || [] : searchResult;
+  const selectedVisibleAccounts = visibleAccounts.filter((account) => selectedTargets.includes(account.profile_url));
+  const selectedCount = selectedVisibleAccounts.length;
 
   useEffect(() => {
     loadCookieStatus();
@@ -536,7 +537,8 @@ function App() {
   }
 
   async function handleBatchAction(action) {
-    if (!selectedTargets.length) {
+    const targets = selectedVisibleAccounts.map((account) => account.profile_url);
+    if (!targets.length) {
       return;
     }
     setFollowLoading(true);
@@ -545,7 +547,7 @@ function App() {
     setFollowResult(null);
 
     try {
-      const data = await batchFollow(action, selectedTargets);
+      const data = await batchFollow(action, targets);
       if (action === "unfollow" && accountMode === "following") {
         await loadFollowing(followingPage, false);
       }
@@ -593,9 +595,8 @@ function App() {
     });
   }
 
-  function addSelectedSearchToScrapeList() {
-    const selected = searchResult.filter((account) => selectedTargets.includes(account.profile_url));
-    addAccountsToScrapeList(selected);
+  function addSelectedVisibleToScrapeList() {
+    addAccountsToScrapeList(selectedVisibleAccounts);
   }
 
   return (
@@ -794,7 +795,7 @@ function App() {
             <div className="following-header">
               <div>
                 <strong>{followingResult?.screen_name || "当前登录账号"}</strong>
-                <span>关注总数 {followingResult ? followingResult.total_number : "--"}</span>
+                <span>关注总数 {followingResult ? followingResult.total_number : "--"}（若包含已注销账号，该数目可能不准确）</span>
               </div>
               <IconButton className="primary-button" icon={RefreshCw} type="button" disabled={followingLoading} onClick={() => loadFollowing(1)}>
                 {followingLoading ? "加载中" : "加载关注列表"}
@@ -802,9 +803,9 @@ function App() {
             </div>
           )}
 
-          <div className="toolbar">
+          <div className="toolbar account-toolbar">
             <span>已选中 {selectedCount} 个账号</span>
-            <div className="actions">
+            <div className="actions account-toolbar-actions">
               <IconButton
                 className="ghost-button"
                 icon={CheckSquare}
@@ -814,24 +815,15 @@ function App() {
               >
                 全选当前列表
               </IconButton>
-              <IconButton
-                className="secondary-button"
-                icon={UserPlus}
-                type="button"
-                disabled={followLoading || !selectedCount}
-                onClick={() => handleBatchAction("follow")}
-              >
-                批量关注
-              </IconButton>
               {accountMode === "search" ? (
                 <IconButton
                   className="secondary-button"
-                  icon={Play}
+                  icon={UserPlus}
                   type="button"
-                  disabled={!selectedCount}
-                  onClick={addSelectedSearchToScrapeList}
+                  disabled={followLoading || !selectedCount}
+                  onClick={() => handleBatchAction("follow")}
                 >
-                  加入待爬取
+                  批量关注
                 </IconButton>
               ) : null}
               <IconButton
@@ -842,6 +834,15 @@ function App() {
                 onClick={() => handleBatchAction("unfollow")}
               >
                 批量取关
+              </IconButton>
+              <IconButton
+                className="secondary-button"
+                icon={Play}
+                type="button"
+                disabled={!selectedCount}
+                onClick={addSelectedVisibleToScrapeList}
+              >
+                加入待爬取
               </IconButton>
             </div>
           </div>

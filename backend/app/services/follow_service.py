@@ -50,8 +50,10 @@ class WeiboFollowService:
         )
         users = payload.get("users", [])
         items = [self._parse_user_item(user) for user in users[:page_size] if isinstance(user, dict)]
-        total_number = int(payload.get("total_number") or len(items))
+        raw_total_number = int(payload.get("total_number") or len(items))
         next_cursor = int(payload.get("next_cursor") or 0)
+        has_next = bool(next_cursor)
+        total_number = raw_total_number if has_next else (page - 1) * page_size + len(items)
 
         return FollowingListResponse(
             uid=uid,
@@ -59,7 +61,7 @@ class WeiboFollowService:
             page=page,
             page_size=page_size,
             total_number=total_number,
-            has_next=bool(next_cursor) or page * page_size < total_number,
+            has_next=has_next,
             items=items,
         )
 

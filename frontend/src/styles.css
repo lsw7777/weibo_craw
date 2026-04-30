@@ -472,6 +472,22 @@ textarea {
   color: var(--muted);
 }
 
+.account-toolbar {
+  align-items: center;
+}
+
+.account-toolbar-actions {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.account-toolbar-actions button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .search-result-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -871,6 +887,11 @@ textarea {
 
   .account-option {
     grid-template-columns: 18px 42px minmax(0, 1fr);
+  }
+
+  .account-toolbar-actions {
+    justify-content: flex-start;
+    width: 100%;
   }
 
   .account-avatar,
