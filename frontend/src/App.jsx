@@ -32,8 +32,10 @@ const DEFAULT_ACCOUNTS = [
 
 const PAGE_SIZE = 20;
 const FOLLOWING_CACHE_KEY = "weibo_craw_following_cache_v1";
+const RESOLVE_CACHE_KEY = "weibo_craw_resolve_cache_v1";
 const SEARCH_HISTORY_KEY = "weibo_craw_search_history_v1";
 const MAX_SEARCH_HISTORY = 20;
+const MAX_RESOLVE_CACHE_ITEMS = 12;
 
 function readLocalJson(key, fallback) {
   if (typeof window === "undefined") {
@@ -52,6 +54,30 @@ function writeLocalJson(key, value) {
     return;
   }
   window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function buildResolveSignature(accounts) {
+  return accounts.join("\n");
+}
+
+function readResolveCache(signature) {
+  const cache = readLocalJson(RESOLVE_CACHE_KEY, {});
+  return cache && typeof cache === "object" ? cache[signature] : null;
+}
+
+function writeResolveCache(signature, accounts, results) {
+  const cache = readLocalJson(RESOLVE_CACHE_KEY, {});
+  const nextCache = cache && typeof cache === "object" && !Array.isArray(cache) ? { ...cache } : {};
+  nextCache[signature] = {
+    accounts,
+    results,
+    updated_at: new Date().toISOString(),
+  };
+
+  const entries = Object.entries(nextCache)
+    .sort(([, left], [, right]) => new Date(right.updated_at || 0) - new Date(left.updated_at || 0))
+    .slice(0, MAX_RESOLVE_CACHE_ITEMS);
+  writeLocalJson(RESOLVE_CACHE_KEY, Object.fromEntries(entries));
 }
 
 function parseAccountInput(value) {
@@ -252,31 +278,33 @@ function AccountOption({ account, checked, onToggle }) {
 }
 
 function ResolvePreview({ accounts, loading, error }) {
-  if (loading) {
-    return <p className="resolve-status">正在校验账号...</p>;
-  }
-
-  if (error) {
+  if (error && !accounts.length) {
     return <p className="error-text">{error}</p>;
   }
 
-  if (!accounts.length) {
+  if (!accounts.length && !loading) {
     return null;
   }
 
   return (
-    <div className="resolve-preview">
-      {accounts.map((account) => (
-        <div className={`resolve-item ${account.valid ? "resolve-valid" : "resolve-invalid"}`} key={account.requested_account}>
-          {account.valid ? <AccountAvatar account={account} size={40} /> : <span className="resolve-invalid-icon">!</span>}
-          <div>
-            <strong>{account.valid ? account.screen_name : account.requested_account}</strong>
-            <span>{account.valid ? account.profile_url : account.error}</span>
-            {account.description ? <p>{account.description}</p> : null}
-          </div>
+    <>
+      {loading ? <p className="resolve-status">正在重新识别账号...</p> : null}
+      {error ? <p className="error-text">{error}</p> : null}
+      {accounts.length ? (
+        <div className="resolve-preview">
+          {accounts.map((account) => (
+            <div className={`resolve-item ${account.valid ? "resolve-valid" : "resolve-invalid"}`} key={account.requested_account}>
+              {account.valid ? <AccountAvatar account={account} size={40} /> : <span className="resolve-invalid-icon">!</span>}
+              <div>
+                <strong>{account.valid ? account.screen_name : account.requested_account}</strong>
+                <span>{account.valid ? account.profile_url : account.error}</span>
+                {account.description ? <p>{account.description}</p> : null}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      ) : null}
+    </>
   );
 }
 
@@ -474,6 +502,15 @@ function App() {
       return undefined;
     }
 
+    const signature = buildResolveSignature(accounts);
+    const cached = readResolveCache(signature);
+    if (Array.isArray(cached?.results)) {
+      setResolvedAccounts(cached.results);
+    } else {
+      setResolvedAccounts([]);
+    }
+    setResolveError("");
+
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setResolveLoading(true);
@@ -482,11 +519,14 @@ function App() {
         const data = await resolveAccounts(accounts);
         if (!cancelled) {
           setResolvedAccounts(data);
+          writeResolveCache(signature, accounts, data);
         }
       } catch (error) {
         if (!cancelled) {
           setResolveError(error.message);
-          setResolvedAccounts([]);
+          if (!Array.isArray(cached?.results)) {
+            setResolvedAccounts([]);
+          }
         }
       } finally {
         if (!cancelled) {
