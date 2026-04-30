@@ -54,6 +54,17 @@ export function resolveAccounts(accounts) {
   });
 }
 
+export function getScrapeAccountsConfig() {
+  return request("/api/config/scrape-accounts");
+}
+
+export function saveScrapeAccountsConfig(accounts) {
+  return request("/api/config/scrape-accounts", {
+    method: "POST",
+    body: JSON.stringify({ accounts }),
+  });
+}
+
 export function getCookieStatus() {
   return request("/api/auth/cookie/status");
 }

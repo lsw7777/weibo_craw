@@ -17,11 +17,13 @@ from app.models.schemas import (
     FollowOperationResponse,
     FollowingListResponse,
     ResolvedAccountResult,
+    ScrapeAccountsConfig,
     ScrapeRequest,
     ScrapeResponse,
 )
 from app.services.auth_config import AuthConfigService
 from app.services.follow_service import WeiboFollowService
+from app.services.scrape_config import ScrapeConfigService
 from app.services.weibo_client import WeiboCrawlerService
 
 
@@ -93,6 +95,24 @@ def resolve_accounts(payload: AccountResolveRequest) -> list[ResolvedAccountResu
     try:
         service = WeiboCrawlerService()
         return service.resolve_accounts(payload.accounts)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(f"{settings.api_prefix}/config/scrape-accounts", response_model=ScrapeAccountsConfig)
+def get_scrape_accounts_config() -> ScrapeAccountsConfig:
+    try:
+        service = ScrapeConfigService()
+        return service.load_accounts()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(f"{settings.api_prefix}/config/scrape-accounts", response_model=ScrapeAccountsConfig)
+def save_scrape_accounts_config(payload: ScrapeAccountsConfig) -> ScrapeAccountsConfig:
+    try:
+        service = ScrapeConfigService()
+        return service.save_accounts(payload)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

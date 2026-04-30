@@ -14,9 +14,11 @@ import {
   batchFollow,
   getCookieStatus,
   getFollowing,
+  getScrapeAccountsConfig,
   resolveAccounts,
   resolveAvatarUrl,
   resolveMediaUrl,
+  saveScrapeAccountsConfig,
   saveCookieString,
   scrapeAccounts,
   searchAccounts,
@@ -29,6 +31,28 @@ const DEFAULT_ACCOUNTS = [
 ].join("\n");
 
 const PAGE_SIZE = 20;
+const FOLLOWING_CACHE_KEY = "weibo_craw_following_cache_v1";
+const SEARCH_HISTORY_KEY = "weibo_craw_search_history_v1";
+const MAX_SEARCH_HISTORY = 20;
+
+function readLocalJson(key, fallback) {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalJson(key, value) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
 
 function parseAccountInput(value) {
   return value
@@ -369,6 +393,8 @@ function App() {
   const [resolvedAccounts, setResolvedAccounts] = useState([]);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [resolveError, setResolveError] = useState("");
+  const [accountConfigLoaded, setAccountConfigLoaded] = useState(false);
+  const [accountConfigMessage, setAccountConfigMessage] = useState("");
   const [authStatus, setAuthStatus] = useState(null);
   const [cookieString, setCookieString] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -379,13 +405,21 @@ function App() {
 
   const [accountMode, setAccountMode] = useState("following");
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [searchHistory, setSearchHistory] = useState(() => {
+    const cached = readLocalJson(SEARCH_HISTORY_KEY, []);
+    return Array.isArray(cached) ? cached : [];
+  });
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [searchResult, setSearchResult] = useState([]);
+  const [followingCache, setFollowingCache] = useState(() => {
+    const cached = readLocalJson(FOLLOWING_CACHE_KEY, null);
+    return cached?.result ? cached : null;
+  });
   const [followingLoading, setFollowingLoading] = useState(false);
   const [followingError, setFollowingError] = useState("");
-  const [followingPage, setFollowingPage] = useState(1);
-  const [followingResult, setFollowingResult] = useState(null);
+  const [followingPage, setFollowingPage] = useState(() => followingCache?.page || 1);
+  const [followingResult, setFollowingResult] = useState(() => followingCache?.result || null);
   const [selectedTargets, setSelectedTargets] = useState([]);
   const [followLoading, setFollowLoading] = useState(false);
   const [followResult, setFollowResult] = useState(null);
@@ -397,6 +431,38 @@ function App() {
 
   useEffect(() => {
     loadCookieStatus();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadScrapeAccountsConfig() {
+      try {
+        const data = await getScrapeAccountsConfig();
+        if (cancelled) {
+          return;
+        }
+        if (data.accounts?.length) {
+          setScrapeForm((current) => ({ ...current, accounts: data.accounts.join("\n") }));
+          setAccountConfigMessage(`已从本地文件读取 ${data.accounts.length} 个账号。`);
+        } else {
+          setAccountConfigMessage("暂无本地账号配置，当前默认账号会自动保存到本地文件。");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAccountConfigMessage(`读取本地账号配置失败：${error.message}`);
+        }
+      } finally {
+        if (!cancelled) {
+          setAccountConfigLoaded(true);
+        }
+      }
+    }
+
+    loadScrapeAccountsConfig();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -434,6 +500,32 @@ function App() {
       window.clearTimeout(timer);
     };
   }, [scrapeForm.accounts]);
+
+  useEffect(() => {
+    if (!accountConfigLoaded) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const accounts = parseAccountInput(scrapeForm.accounts);
+      try {
+        const data = await saveScrapeAccountsConfig(accounts);
+        if (!cancelled) {
+          setAccountConfigMessage(`已保存 ${data.accounts.length} 个账号到本地文件。`);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAccountConfigMessage(`保存账号配置失败：${error.message}`);
+        }
+      }
+    }, 700);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [scrapeForm.accounts, accountConfigLoaded]);
 
   const totals = !scrapeResult
     ? { accounts: 0, posts: 0, comments: 0 }
@@ -506,19 +598,47 @@ function App() {
 
   async function handleSearchSubmit(event) {
     event.preventDefault();
+    await runAccountSearch(searchKeyword);
+  }
+
+  async function runAccountSearch(query) {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) {
+      return;
+    }
     setAccountMode("search");
+    setSearchKeyword(normalizedQuery);
     setSearchLoading(true);
     setSearchError("");
     setFollowResult(null);
 
     try {
-      const data = await searchAccounts(searchKeyword, 12);
+      const data = await searchAccounts(normalizedQuery, 12);
       setSearchResult(data);
       setSelectedTargets([]);
+      setSearchHistory((current) => {
+        const history = Array.isArray(current) ? current : [];
+        const next = [normalizedQuery, ...history.filter((item) => item !== normalizedQuery)].slice(0, MAX_SEARCH_HISTORY);
+        writeLocalJson(SEARCH_HISTORY_KEY, next);
+        return next;
+      });
     } catch (error) {
       setSearchError(error.message);
     } finally {
       setSearchLoading(false);
+    }
+  }
+
+  function clearSearchHistory() {
+    setSearchHistory([]);
+    writeLocalJson(SEARCH_HISTORY_KEY, []);
+  }
+
+  function showFollowingMode() {
+    setAccountMode("following");
+    if (!followingResult && followingCache?.result) {
+      setFollowingResult(followingCache.result);
+      setFollowingPage(followingCache.page || followingCache.result.page || 1);
     }
   }
 
@@ -534,6 +654,9 @@ function App() {
       const data = await getFollowing(page, PAGE_SIZE);
       setFollowingResult(data);
       setFollowingPage(page);
+      const nextCache = { page, result: data, cached_at: new Date().toISOString() };
+      setFollowingCache(nextCache);
+      writeLocalJson(FOLLOWING_CACHE_KEY, nextCache);
       setSelectedTargets([]);
     } catch (error) {
       setFollowingError(error.message);
@@ -691,6 +814,7 @@ function App() {
                 <div>
                   <span>微博账号 URL / UID</span>
                   <p>已填写 {accountInputCount} 个账号，展开后可编辑或粘贴多行。</p>
+                  {accountConfigMessage ? <p>{accountConfigMessage}</p> : null}
                 </div>
                 <button
                   aria-expanded={accountEditorOpen}
@@ -811,7 +935,7 @@ function App() {
                 <button
                   className={accountMode === "following" ? "active" : ""}
                   type="button"
-                  onClick={() => setAccountMode("following")}
+                  onClick={showFollowingMode}
                 >
                   <Users size={16} />
                   <span>我的关注</span>
@@ -827,17 +951,34 @@ function App() {
               </div>
 
               {accountMode === "search" ? (
-                <form className="inline-form" onSubmit={handleSearchSubmit}>
-                  <input
-                    type="text"
-                    value={searchKeyword}
-                    onChange={(event) => setSearchKeyword(event.target.value)}
-                    placeholder="输入微博昵称、关键词、UID"
-                  />
-                  <IconButton className="primary-button" icon={Search} type="submit" disabled={searchLoading || !searchKeyword.trim()}>
-                    {searchLoading ? "搜索中" : "搜索账号"}
-                  </IconButton>
-                </form>
+                <>
+                  <form className="inline-form" onSubmit={handleSearchSubmit}>
+                    <input
+                      type="text"
+                      value={searchKeyword}
+                      onChange={(event) => setSearchKeyword(event.target.value)}
+                      placeholder="输入微博昵称、关键词、UID"
+                    />
+                    <IconButton className="primary-button" icon={Search} type="submit" disabled={searchLoading || !searchKeyword.trim()}>
+                      {searchLoading ? "搜索中" : "搜索账号"}
+                    </IconButton>
+                  </form>
+                  {searchHistory.length ? (
+                    <div className="search-history">
+                      <span>搜索历史</span>
+                      <div>
+                        {searchHistory.map((item) => (
+                          <button type="button" key={item} disabled={searchLoading} onClick={() => runAccountSearch(item)}>
+                            {item}
+                          </button>
+                        ))}
+                        <button className="clear-history-button" type="button" onClick={clearSearchHistory}>
+                          清空
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <div className="following-header">
                   <div className="following-meta">

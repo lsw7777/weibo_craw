@@ -87,6 +87,11 @@ class ScrapeResponse(BaseModel):
     results: list[ScrapedAccountResult]
 
 
+class ScrapeAccountsConfig(BaseModel):
+    accounts: list[str] = Field(default_factory=list)
+    updated_at: datetime | None = None
+
+
 class AccountSearchResult(BaseModel):
     uid: str
     screen_name: str

@@ -533,6 +533,48 @@ textarea {
   flex: 1 1 240px;
 }
 
+.search-history {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -2px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.search-history > span {
+  flex: 0 0 auto;
+}
+
+.search-history div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.search-history button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(24, 55, 91, 0.08);
+  color: #18375b;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.search-history button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.search-history .clear-history-button {
+  background: rgba(212, 85, 0, 0.1);
+  color: var(--primary-dark);
+}
+
 .toolbar {
   justify-content: space-between;
   margin-bottom: 10px;
