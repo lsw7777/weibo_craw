@@ -36,6 +36,17 @@ const RESOLVE_CACHE_KEY = "weibo_craw_resolve_cache_v1";
 const SEARCH_HISTORY_KEY = "weibo_craw_search_history_v1";
 const MAX_SEARCH_HISTORY = 20;
 const MAX_RESOLVE_CACHE_ITEMS = 12;
+const TIME_RANGE_OPTIONS = [
+  { label: "三天", amount: 3, unit: "days" },
+  { label: "一周", amount: 7, unit: "days" },
+  { label: "一个月", amount: 1, unit: "months" },
+  { label: "三个月", amount: 3, unit: "months" },
+  { label: "半年", amount: 6, unit: "months" },
+  { label: "一年", amount: 1, unit: "years" },
+  { label: "三年", amount: 3, unit: "years" },
+  { label: "十年", amount: 10, unit: "years" },
+  { label: "全部时间", unit: "all" },
+];
 
 function readLocalJson(key, fallback) {
   if (typeof window === "undefined") {
@@ -85,6 +96,15 @@ function parseAccountInput(value) {
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function formatDateTimeLocal(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join("-") + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function formatDate(value) {
@@ -768,6 +788,31 @@ function App() {
     addAccountsToScrapeList(selectedVisibleAccounts);
   }
 
+  function applyTimeRange(option) {
+    if (option.unit === "all") {
+      setScrapeForm((current) => ({ ...current, startTime: "", endTime: "" }));
+      return;
+    }
+
+    const end = new Date();
+    const start = new Date(end);
+    if (option.unit === "days") {
+      start.setDate(start.getDate() - option.amount);
+    }
+    if (option.unit === "months") {
+      start.setMonth(start.getMonth() - option.amount);
+    }
+    if (option.unit === "years") {
+      start.setFullYear(start.getFullYear() - option.amount);
+    }
+
+    setScrapeForm((current) => ({
+      ...current,
+      startTime: formatDateTimeLocal(start),
+      endTime: formatDateTimeLocal(end),
+    }));
+  }
+
   return (
     <div className="app-shell">
       <header className="hero">
@@ -920,6 +965,17 @@ function App() {
                 onChange={(event) => setScrapeForm((current) => ({ ...current, endTime: event.target.value }))}
               />
             </label>
+
+            <div className="time-presets field-span">
+              <span>快捷时间范围</span>
+              <div>
+                {TIME_RANGE_OPTIONS.map((option) => (
+                  <button type="button" key={option.label} onClick={() => applyTimeRange(option)}>
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <label className="switch">
               <input

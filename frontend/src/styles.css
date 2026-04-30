@@ -331,6 +331,42 @@ textarea {
   height: 16px;
 }
 
+.time-presets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.time-presets > span {
+  flex: 0 0 auto;
+}
+
+.time-presets div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.time-presets button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(24, 55, 91, 0.08);
+  color: #18375b;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.time-presets button:hover {
+  background: rgba(24, 55, 91, 0.14);
+}
+
 .actions,
 .toolbar,
 .inline-form {
