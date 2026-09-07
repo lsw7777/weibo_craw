@@ -238,6 +238,33 @@ class BrowserCookieProvider:
 
         return WeiboLoginInfo(True, uid=uid, screen_name=screen_name, message="已识别微博登录态。")
 
+    def validate_playwright_cookies(self, cookies: list[dict]) -> WeiboLoginInfo:
+        """用 Requests 校验浏览器上下文中的 Cookie 是否为真实登录（游客会话也会带 SUB）。"""
+
+        session = requests.Session()
+        session.headers.update(
+            {
+                "User-Agent": settings.api_user_agent,
+                "Referer": "https://weibo.com/",
+                "X-Requested-With": "XMLHttpRequest",
+            }
+        )
+        for item in cookies:
+            if not isinstance(item, dict):
+                continue
+            domain = str(item.get("domain") or "")
+            if "weibo.com" not in domain and "weibo.cn" not in domain:
+                continue
+            name = str(item.get("name") or "")
+            value = item.get("value")
+            if not name or value is None:
+                continue
+            session.cookies.set(name, str(value), domain=domain or ".weibo.com", path=str(item.get("path") or "/"))
+
+        if not session.cookies:
+            return WeiboLoginInfo(False, message="浏览器中还没有微博域的 Cookie。")
+        return self.validate_login(session)
+
     def build_requests_session(self) -> requests.Session:
         try:
             jar, _source = self.load()

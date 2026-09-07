@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from urllib.parse import urlparse
 
 import requests
@@ -26,6 +28,12 @@ from app.services.browser_login import BrowserLoginService
 from app.services.follow_service import WeiboFollowService
 from app.services.scrape_config import ScrapeConfigService
 from app.services.weibo_client import WeiboCrawlerService
+
+
+logger = logging.getLogger("weibo.api")
+
+# 让 weibo.* 业务日志（含自动获取 Cookie 的过程与异常堆栈）输出到后端控制台。
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
 
 
 app = FastAPI(title=settings.project_name)
@@ -103,11 +111,16 @@ def clear_cookie() -> AuthCookieStatus:
 @app.post(f"{settings.api_prefix}/auth/cookie/auto-login", response_model=AuthCookieStatus)
 def auto_login_capture() -> AuthCookieStatus:
     """自动识别登录态；未识别到时打开浏览器让用户登录一次并自动捕获 Cookie。"""
+    logger.info("收到自动获取 Cookie 请求，开始检测登录态...")
     try:
         service = BrowserLoginService()
-        return service.capture_login()
+        status = service.capture_login()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # 完整堆栈输出到后端控制台，便于定位弹窗未出现等环境问题。
+        logger.exception("自动获取 Cookie 失败")
+        raise HTTPException(status_code=400, detail=str(exc) or exc.__class__.__name__) from exc
+    logger.info("自动获取 Cookie 完成：readable=%s source=%s message=%s", status.readable, status.source, status.message)
+    return status
 
 
 @app.post(f"{settings.api_prefix}/accounts/resolve", response_model=list[ResolvedAccountResult])
