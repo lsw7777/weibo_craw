@@ -22,6 +22,7 @@ from app.models.schemas import (
     ScrapeResponse,
 )
 from app.services.auth_config import AuthConfigService
+from app.services.browser_login import BrowserLoginService
 from app.services.follow_service import WeiboFollowService
 from app.services.scrape_config import ScrapeConfigService
 from app.services.weibo_client import WeiboCrawlerService
@@ -86,6 +87,25 @@ def save_cookie(payload: AuthCookieUpdateRequest) -> AuthCookieStatus:
     try:
         service = AuthConfigService()
         return service.save_cookie_string(payload.cookie_string)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete(f"{settings.api_prefix}/auth/cookie", response_model=AuthCookieStatus)
+def clear_cookie() -> AuthCookieStatus:
+    try:
+        service = AuthConfigService()
+        return service.clear_cookie_string()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(f"{settings.api_prefix}/auth/cookie/auto-login", response_model=AuthCookieStatus)
+def auto_login_capture() -> AuthCookieStatus:
+    """自动识别登录态；未识别到时打开浏览器让用户登录一次并自动捕获 Cookie。"""
+    try:
+        service = BrowserLoginService()
+        return service.capture_login()
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

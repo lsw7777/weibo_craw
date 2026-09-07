@@ -259,6 +259,44 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.auth-account-name {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--success-bg);
+  color: #1c7a4c;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.auth-manual-steps {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auth-manual-steps summary {
+  cursor: pointer;
+  color: var(--secondary);
+}
+
+.auth-manual-steps[open] summary {
+  margin-bottom: 6px;
+}
+
+.auto-login-actions {
+  align-items: center;
+  margin-top: 10px;
+  gap: 10px;
+}
+
+.auto-login-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -946,15 +984,45 @@ textarea {
 }
 
 .resolve-item {
+  position: relative;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   flex: 0 0 240px;
   gap: 8px;
   align-items: center;
-  padding: 8px;
+  padding: 8px 22px 8px 8px;
   border: 1px solid rgba(21, 34, 51, 0.08);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.7);
+}
+
+.resolve-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.resolve-item:hover .resolve-remove,
+.resolve-remove:focus-visible {
+  opacity: 1;
+}
+
+.resolve-remove:hover {
+  background: var(--danger-bg);
+  color: #b43329;
 }
 
 .resolve-valid {

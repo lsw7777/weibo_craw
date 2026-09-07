@@ -150,10 +150,12 @@ class FollowOperationResponse(BaseModel):
 class AuthCookieStatus(BaseModel):
     configured: bool
     readable: bool
-    source: Literal["manual", "browser", "none"]
+    source: Literal["manual", "saved", "browser", "none"]
     cookie_count: int = 0
     message: str
     cookie_string: str = ""
+    uid: str | None = None
+    screen_name: str | None = None
 
 
 class AuthCookieUpdateRequest(BaseModel):

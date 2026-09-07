@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.core.config import BACKEND_ROOT, settings
 from app.models.schemas import AuthCookieStatus
-from app.services.browser_auth import BrowserCookieProvider
+from app.services.browser_login import BrowserLoginService
 
 
 COOKIE_KEY = "WEIBO_COOKIE_STRING"
@@ -12,34 +12,18 @@ COOKIE_KEY = "WEIBO_COOKIE_STRING"
 
 class AuthConfigService:
     def get_status(self) -> AuthCookieStatus:
-        configured = bool(settings.cookie_string and settings.cookie_string.strip())
-        saved_cookie_string = settings.cookie_string.strip() if configured and settings.cookie_string else ""
-        source = "manual" if configured else "browser"
-        try:
-            cookies = BrowserCookieProvider().build_playwright_cookies()
-        except Exception as exc:
-            return AuthCookieStatus(
-                configured=configured,
-                readable=False,
-                source=source if configured else "none",
-                cookie_count=0,
-                message=str(exc),
-                cookie_string=saved_cookie_string,
-            )
-
-        return AuthCookieStatus(
-            configured=configured,
-            readable=True,
-            source=source,
-            cookie_count=len(cookies),
-            message="已读取微博登录态。",
-            cookie_string=saved_cookie_string,
-        )
+        auth_service = BrowserLoginService()
+        return auth_service._current_status(check_login=True)
 
     def save_cookie_string(self, cookie_string: str) -> AuthCookieStatus:
         normalized = self._normalize_cookie_string(cookie_string)
         settings.cookie_string = normalized
         self._upsert_env_value(BACKEND_ROOT / ".env", COOKIE_KEY, normalized)
+        return self.get_status()
+
+    def clear_cookie_string(self) -> AuthCookieStatus:
+        settings.cookie_string = None
+        self._remove_env_value(BACKEND_ROOT / ".env", COOKIE_KEY)
         return self.get_status()
 
     def _normalize_cookie_string(self, cookie_string: str) -> str:
@@ -72,4 +56,12 @@ class AuthConfigService:
         if not replaced:
             updated_lines.append(next_line)
 
+        env_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+
+    def _remove_env_value(self, env_path: Path, key: str) -> None:
+        if not env_path.exists():
+            return
+
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+        updated_lines = [line for line in lines if not line.startswith(f"{key}=")]
         env_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")

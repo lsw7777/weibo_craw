@@ -76,6 +76,14 @@ export function saveCookieString(cookieString) {
   });
 }
 
+export function clearCookieString() {
+  return request("/api/auth/cookie", { method: "DELETE" });
+}
+
+export function autoLoginCapture() {
+  return request("/api/auth/cookie/auto-login", { method: "POST" });
+}
+
 export function searchAccounts(query, limit = 10) {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   return request(`/api/accounts/search?${params.toString()}`);

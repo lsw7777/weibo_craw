@@ -9,9 +9,12 @@ import {
   UserMinus,
   UserPlus,
   Users,
+  X,
 } from "lucide-react";
 import {
+  autoLoginCapture,
   batchFollow,
+  clearCookieString,
   getCookieStatus,
   getFollowing,
   getScrapeAccountsConfig,
@@ -177,11 +180,12 @@ function AuthStatusPill({ status }) {
   }
 
   if (status.readable) {
-    return (
-      <span className="status-pill status-ok">
-        {status.source === "manual" ? "手动 Cookie 可用" : "浏览器登录态可用"}
-      </span>
-    );
+    const labels = {
+      manual: "手动 Cookie 可用",
+      saved: "自动登录态可用",
+      browser: "浏览器登录态可用",
+    };
+    return <span className="status-pill status-ok">{labels[status.source] || "登录态可用"}</span>;
   }
 
   return <span className="status-pill status-error">登录态不可用</span>;
@@ -297,7 +301,7 @@ function AccountOption({ account, checked, onToggle }) {
   );
 }
 
-function ResolvePreview({ accounts, loading, error }) {
+function ResolvePreview({ accounts, loading, error, onRemove }) {
   if (error && !accounts.length) {
     return <p className="error-text">{error}</p>;
   }
@@ -314,6 +318,15 @@ function ResolvePreview({ accounts, loading, error }) {
         <div className="resolve-preview">
           {accounts.map((account) => (
             <div className={`resolve-item ${account.valid ? "resolve-valid" : "resolve-invalid"}`} key={account.requested_account}>
+              <button
+                aria-label={`移除账号 ${account.requested_account}`}
+                className="resolve-remove"
+                title="从抓取列表移除"
+                type="button"
+                onClick={() => onRemove?.(account)}
+              >
+                <X size={13} strokeWidth={2.4} />
+              </button>
               {account.valid ? <AccountAvatar account={account} size={40} /> : <span className="resolve-invalid-icon">!</span>}
               <div>
                 <strong>{account.valid ? account.screen_name : account.requested_account}</strong>
@@ -446,6 +459,7 @@ function App() {
   const [authStatus, setAuthStatus] = useState(null);
   const [cookieString, setCookieString] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [autoLoginLoading, setAutoLoginLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
   const [accountEditorOpen, setAccountEditorOpen] = useState(false);
@@ -629,6 +643,36 @@ function App() {
     }
   }
 
+  async function handleAutoLogin() {
+    setAutoLoginLoading(true);
+    setAuthMessage("正在自动识别微博登录态；若未检测到登录，会弹出浏览器窗口，请在窗口中登录微博（最长等待 3 分钟）...");
+    try {
+      const data = await autoLoginCapture();
+      setAuthStatus(data);
+      setCookieString(data.cookie_string || "");
+      setAuthMessage(data.message);
+    } catch (error) {
+      setAuthMessage(error.message);
+    } finally {
+      setAutoLoginLoading(false);
+    }
+  }
+
+  async function handleCookieClear() {
+    setAuthLoading(true);
+    setAuthMessage("");
+    try {
+      const data = await clearCookieString();
+      setAuthStatus(data);
+      setCookieString("");
+      setAuthMessage(data.message);
+    } catch (error) {
+      setAuthMessage(error.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
   async function handleScrapeSubmit(event) {
     event.preventDefault();
     setScrapeLoading(true);
@@ -784,6 +828,20 @@ function App() {
     });
   }
 
+  function removeScrapeAccount(account) {
+    const target = (account?.requested_account || "").trim();
+    if (!target) {
+      return;
+    }
+
+    setScrapeForm((current) => {
+      const lines = current.accounts.split(/\r?\n/);
+      const remaining = lines.filter((line) => line.trim() !== target);
+      // 保留末尾换行结构，若清空则回到空字符串
+      return { ...current, accounts: remaining.join("\n") };
+    });
+  }
+
   function addSelectedVisibleToScrapeList() {
     addAccountsToScrapeList(selectedVisibleAccounts);
   }
@@ -833,11 +891,12 @@ function App() {
           <div>
             <h2>登录态设置</h2>
             <p className="section-note">
-              Edge 已登录只说明浏览器可访问微博。后端需要读取微博 Cookie；如果 Cookie 数据库被 Windows 锁定，就需要在这里填写一次请求 Cookie。
+              后端会按“手动 Cookie → 自动保存的登录态 → Edge/Chrome Cookie 库”的顺序自动识别微博登录态；识别不到时，点击“自动获取 Cookie”弹出窗口登录一次即可，之后无需再手动粘贴。
             </p>
           </div>
           <div className="title-actions">
             <AuthStatusPill status={authStatus} />
+            {authStatus?.screen_name ? <span className="auth-account-name">{authStatus.screen_name}</span> : null}
             <button
               aria-expanded={authPanelOpen}
               className="collapse-toggle"
@@ -853,36 +912,58 @@ function App() {
         {authPanelOpen ? (
           <div className="auth-grid">
             <div className="auth-guide">
-              <ol className="tutorial-list">
-                <li>在 Edge 打开微博页面并保持登录。</li>
-                <li>按 F12 打开开发者工具，进入“网络 / Network”，刷新页面。</li>
-                <li>
-                  点开任意 <code>weibo.com/ajax/...</code> 请求，在 Request Headers 中复制 <code>Cookie</code> 整行内容。
-                </li>
-                <li>粘贴到右侧输入框，点击“保存 Cookie”。</li>
-              </ol>
-              <p className="auth-message">{authMessage || "Cookie 保存在本机 backend/.env，可在此处查看和更新。"}</p>
+              <p className="auth-message">{authMessage || "后端会自动识别微博登录态；识别失败时可自动弹出登录窗口，或手动粘贴请求 Cookie。"}</p>
+              <details className="auth-manual-steps">
+                <summary>手动获取 Cookie 的步骤（备用）</summary>
+                <ol className="tutorial-list">
+                  <li>在 Edge 打开微博页面并保持登录。</li>
+                  <li>按 F12 打开开发者工具，进入“网络 / Network”，刷新页面。</li>
+                  <li>
+                    点开任意 <code>weibo.com/ajax/...</code> 请求，在 Request Headers 中复制 <code>Cookie</code> 整行内容。
+                  </li>
+                  <li>粘贴到右侧输入框，点击“保存 Cookie”。</li>
+                </ol>
+              </details>
             </div>
 
-            <form className="auth-form" onSubmit={handleCookieSave}>
-              <label className="field">
-                <span>微博请求 Cookie</span>
-                <textarea
-                  rows="4"
-                  value={cookieString}
-                  onChange={(event) => setCookieString(event.target.value)}
-                  placeholder="SUB=...; XSRF-TOKEN=...; ..."
-                />
-              </label>
-              <div className="actions">
-                <IconButton className="primary-button" icon={Save} type="submit" disabled={authLoading || !cookieString.trim()}>
-                  {authLoading ? "处理中" : "保存 Cookie"}
+            <div className="auth-form">
+              <form onSubmit={handleCookieSave}>
+                <label className="field">
+                  <span>微博请求 Cookie</span>
+                  <textarea
+                    rows="4"
+                    value={cookieString}
+                    onChange={(event) => setCookieString(event.target.value)}
+                    placeholder="SUB=...; XSRF-TOKEN=...; ..."
+                  />
+                </label>
+                <div className="actions">
+                  <IconButton className="primary-button" icon={Save} type="submit" disabled={authLoading || !cookieString.trim()}>
+                    {authLoading ? "处理中" : "保存 Cookie"}
+                  </IconButton>
+                  <IconButton className="ghost-button" icon={RefreshCw} type="button" disabled={authLoading} onClick={loadCookieStatus}>
+                    检测登录态
+                  </IconButton>
+                  {authStatus?.configured ? (
+                    <IconButton className="ghost-button" icon={X} type="button" disabled={authLoading} onClick={handleCookieClear}>
+                      清除手动 Cookie
+                    </IconButton>
+                  ) : null}
+                </div>
+              </form>
+              <div className="actions auto-login-actions">
+                <IconButton
+                  className="primary-button"
+                  icon={Users}
+                  type="button"
+                  disabled={autoLoginLoading || authLoading}
+                  onClick={handleAutoLogin}
+                >
+                  {autoLoginLoading ? "等待微博登录中..." : "自动获取 Cookie"}
                 </IconButton>
-                <IconButton className="ghost-button" icon={RefreshCw} type="button" disabled={authLoading} onClick={loadCookieStatus}>
-                  检测登录态
-                </IconButton>
+                <p className="auto-login-hint">自动弹出浏览器打开微博：已登录则直接识别加载，未登录则在窗口里登录一次，Cookie 自动保存复用。</p>
               </div>
-            </form>
+            </div>
           </div>
         ) : null}
       </section>
@@ -919,7 +1000,12 @@ function App() {
                     onChange={(event) => setScrapeForm((current) => ({ ...current, accounts: event.target.value }))}
                     placeholder="每行一个账号"
                   />
-                  <ResolvePreview accounts={resolvedAccounts} loading={resolveLoading} error={resolveError} />
+                  <ResolvePreview
+                    accounts={resolvedAccounts}
+                    loading={resolveLoading}
+                    error={resolveError}
+                    onRemove={removeScrapeAccount}
+                  />
                 </>
               ) : null}
             </div>

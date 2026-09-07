@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     request_timeout: int = Field(default=30, alias="WEIBO_REQUEST_TIMEOUT")
     request_interval_seconds: float = Field(default=0.6, alias="WEIBO_REQUEST_INTERVAL_SECONDS")
     max_page_count: int = Field(default=30, alias="WEIBO_MAX_PAGE_COUNT")
+    auto_login_timeout: int = Field(default=180, alias="WEIBO_AUTO_LOGIN_TIMEOUT")
     frontend_origins: list[str] = [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
@@ -35,6 +36,8 @@ class Settings(BaseSettings):
     data_dir: Path = DATA_ROOT
     download_dir: Path = DATA_ROOT / "downloads"
     export_dir: Path = DATA_ROOT / "exports"
+    state_file: Path = DATA_ROOT / "weibo_state.json"
+    browser_profile_dir: Path = DATA_ROOT / "browser_profile"
     analysis_top_k: int = 8
     analysis_viewpoint_count: int = 5
     api_user_agent: str = (

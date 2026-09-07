@@ -32,15 +32,20 @@ weibo_craw
 
 ### 2.1 浏览器登录
 
-当前实现默认读取本机 `Edge` 浏览器的微博 Cookie。请先确保：
+后端会按以下顺序自动识别并加载微博登录态：
 
-- 你已经在 `Edge` 中登录微博
-- 目标账号页面可以正常访问
+1. `backend/.env` 中的 `WEIBO_COOKIE_STRING`（手动 Cookie，优先级最高）
+2. `backend/data/weibo_state.json`（程序自动保存的登录态，由“自动获取 Cookie”生成，之后每次启动自动加载）
+3. 本机 `Edge` / `Chrome` 的 Cookie 数据库（可用 `WEIBO_COOKIE_BROWSER` 指定 `edge` 或 `chrome`）
+
+请先确保：
+
+- 你已经在 `Edge` 中登录微博（或其他来源可用）
 - 本机网络可以打开 `https://weibo.com`
 
-如果你使用的是 `Chrome`，可在 `backend/.env` 中将 `WEIBO_COOKIE_BROWSER=edge` 改成 `chrome`。
+如果 Edge/Chrome 运行中锁定了 Cookie 数据库导致自动读取失败，可在前端“登录态设置”中点击“自动获取 Cookie”：程序会弹出浏览器窗口打开微博，已登录则直接识别加载，未登录时在窗口里登录一次，Cookie 即自动保存到 `backend/data/weibo_state.json` 长期复用。
 
-如果当前 Windows 环境无法直接读取浏览器 Cookie，可在前端“登录态设置”中填写 Cookie 兜底，也可以手工写入 `.env`：
+也可以在前端“登录态设置”中手工粘贴 Cookie 兜底，或直接写入 `.env`：
 
 - 在 `backend/.env` 中填写 `WEIBO_COOKIE_STRING=你的微博Cookie`
 - Cookie 可从浏览器开发者工具的任意微博请求头中复制
@@ -95,22 +100,29 @@ npm run dev
 
 ### 4.0 登录态设置
 
-前端首页顶部有“登录态设置”区域，会显示当前后端是否能读取微博登录态。
+前端首页顶部有“登录态设置”区域，会显示当前后端是否能自动识别微博登录态，以及当前登录账号昵称。
 
-为什么 Edge 已登录仍可能失败：
+自动识别顺序：
+
+1. 手动保存的请求 Cookie（`backend/.env` 的 `WEIBO_COOKIE_STRING`）
+2. 程序自动保存的登录态（`backend/data/weibo_state.json`）
+3. 本机 Edge / Chrome 浏览器的 Cookie 数据库
+
+推荐流程（无需手动 F12）：
+
+1. 点击登录态设置中的“自动获取 Cookie”
+2. 若已检测到登录态，直接显示“登录态可用”，无需任何操作
+3. 若未检测到，程序会弹出浏览器窗口打开 `https://weibo.com`，在窗口中登录微博（扫码或账密）
+4. 登录成功后后端自动捕获 Cookie 并保存到本地，之后每次启动自动加载
+
+手动兜底（可选）：点开“手动获取 Cookie 的步骤”，按 F12 从网络请求头复制 `Cookie` 粘贴到输入框，点击“保存 Cookie”保存在本机 `backend/.env`。
+
+为什么 Edge 已登录后端仍可能识别失败：
 
 - 微博登录态保存在 Edge 的本机 Cookie 数据库中
-- Edge 运行时或 Windows 权限策略可能锁定该数据库文件
-- 后端是独立 Python 进程，不能保证能直接读取正在被锁定的浏览器文件
-- 这时需要把微博请求头里的 `Cookie` 复制到前端，后端会保存到本机 `backend/.env`
-
-获取 Cookie 的简要步骤：
-
-1. 在 Edge 打开微博页面并保持登录
-2. 按 F12 打开开发者工具，进入“网络 / Network”
-3. 刷新微博页面，点开任意 `weibo.com/ajax/...` 请求
-4. 在 Request Headers 中复制 `Cookie` 整行内容
-5. 回到前端“登录态设置”，粘贴并点击“保存 Cookie”
+- Edge 运行时或 Windows 权限策略可能锁定该数据库文件（后端会先尝试只读模式兜底读取）
+- 新版 Chrome/Edge 的 App-Bound 加密也可能导致普通进程解密失败
+- 这时点击“自动获取 Cookie”即可一次登录长期复用
 
 ### 4.1 批量抓取微博内容和评论
 
